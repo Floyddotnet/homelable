@@ -97,7 +97,13 @@ export function serializeNode(n: Node<NodeData>): Record<string, unknown> {
     notes: n.data.notes ?? null,
     parent_id: n.data.parent_id ?? null,
     container_mode: n.data.container_mode ?? false,
-    custom_colors: n.data.custom_colors ?? null,
+    // Stash collapse state inside the custom_colors blob so the backend's
+    // dict[str, Any] column carries it without a schema change. Hoisted
+    // back to `data.collapsed` on load. Applies to every node type — group
+    // containers, Proxmox hosts, etc. — not just groupRect zones.
+    custom_colors: n.data.collapsed !== undefined
+      ? { ...(n.data.custom_colors ?? {}), collapsed: n.data.collapsed }
+      : (n.data.custom_colors ?? null),
     custom_icon: n.data.custom_icon ?? null,
     cpu_count: n.data.cpu_count ?? null,
     cpu_model: n.data.cpu_model ?? null,
@@ -162,7 +168,14 @@ export function deserializeApiNode(
     id: n.id,
     type: normalizedType,
     position: { x: n.pos_x, y: n.pos_y },
-    data: { ...n, type: normalizedType, bottom_handles: clampBottomHandles(n.bottom_handles ?? 1) } as unknown as NodeData,
+    // Hoist persisted collapse flag from the custom_colors stash (matches
+    // the symmetric serialize step). Applies to every node type.
+    data: {
+      ...n,
+      type: normalizedType,
+      bottom_handles: clampBottomHandles(n.bottom_handles ?? 1),
+      collapsed: Boolean(n.custom_colors?.collapsed),
+    } as unknown as NodeData,
     ...(n.parent_id && parentIsContainer ? { parentId: n.parent_id, extent: 'parent' as const } : {}),
     ...(['proxmox', 'vm', 'lxc', 'docker_host'].includes(normalizedType) && n.container_mode !== false
       ? { width: n.width ?? 300, height: n.height ?? 200 }

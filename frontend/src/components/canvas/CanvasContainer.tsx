@@ -17,7 +17,7 @@ import '@xyflow/react/dist/style.css'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { THEMES } from '@/utils/themes'
-import { getVisibleNodeIds, rewireEdgesForCollapse } from '@/utils/collapseFilter'
+import { computeCollapseInfo, rewireEdgesForCollapse } from '@/utils/collapseFilter'
 import { nodeTypes } from './nodes/nodeTypes'
 import { edgeTypes } from './edges/edgeTypes'
 import { SearchBar } from './SearchBar'
@@ -57,14 +57,14 @@ export function CanvasContainer({ onConnect: onConnectProp, onEdgeDoubleClick, o
   const theme = THEMES[activeTheme]
 
   // Filter nodes and edges based on collapsed state (memoized — O(n)).
-  const visibleNodeIds = useMemo(() => getVisibleNodeIds(nodes), [nodes])
+  const collapseInfo = useMemo(() => computeCollapseInfo(nodes), [nodes])
   const visibleNodes = useMemo(
-    () => nodes.filter((n) => visibleNodeIds.has(n.id)),
-    [nodes, visibleNodeIds],
+    () => nodes.filter((n) => collapseInfo.visibleIds.has(n.id)),
+    [nodes, collapseInfo],
   )
   const visibleEdges = useMemo(
-    () => rewireEdgesForCollapse(edges, nodes, visibleNodeIds),
-    [edges, nodes, visibleNodeIds],
+    () => rewireEdgesForCollapse(edges, nodes, collapseInfo.visibleIds, collapseInfo.hiddenBy),
+    [edges, nodes, collapseInfo],
   )
 
   const onNodeClick = useCallback((e: React.MouseEvent, node: Node<NodeData>) => {

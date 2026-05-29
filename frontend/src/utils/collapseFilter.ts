@@ -2,80 +2,176 @@ import type { Edge, Node } from '@xyflow/react'
 import type { EdgeData, NodeData } from '@/types'
 
 /**
- * Compute the set of node IDs that should be visible on the canvas given the
- * current collapse state of group/zone nodes.
+ * Collapse model
+ * ──────────────
+ * Two ways a node can collapse and hide what it "contains":
  *
- * A node is hidden if any ancestor (via `parentId`) has
- * `data.custom_colors.collapsed === true`. Root nodes (no `parentId`) are
- * always visible.
+ *   1. parentId hierarchy  — `type: 'group'` containers (createGroup) and
+ *      Proxmox container_mode children. Setting `data.collapsed = true` on
+ *      such a node hides every node in its parentId subtree.
  *
- * O(n) — builds a `parentId -> children[]` index once, then BFS from roots.
+ *   2. Spatial containment — `type: 'groupRect'` decorative zones drawn
+ *      around nodes. Zones do not parent their contents in React Flow, so
+ *      we hit-test every top-level node's centre against the zone bbox to
+ *      decide what is "inside". Collapsing a zone hides every node whose
+ *      centre lies inside the zone (plus the parentId subtrees of those
+ *      nodes, so e.g. a Proxmox host inside a collapsed zone also takes its
+ *      VMs/LXCs with it).
+ *
+ * `hiddenBy` records which collapsed ancestor hid each node — used by edge
+ * rewiring to redirect a vanished endpoint to the visible zone the user is
+ * actually looking at.
  */
-export function getVisibleNodeIds(nodes: Node<NodeData>[]): Set<string> {
-  const childrenByParent = new Map<string, string[]>()
-  for (const n of nodes) {
-    if (n.parentId) {
-      const arr = childrenByParent.get(n.parentId)
-      if (arr) arr.push(n.id)
-      else childrenByParent.set(n.parentId, [n.id])
-    }
+
+interface BBox { x: number; y: number; w: number; h: number }
+
+const DEFAULT_NODE_W = 200
+const DEFAULT_NODE_H = 80
+const DEFAULT_ZONE_W = 360
+const DEFAULT_ZONE_H = 240
+
+function bboxOf(n: Node<NodeData>, fallbackW: number, fallbackH: number): BBox {
+  return {
+    x: n.position.x,
+    y: n.position.y,
+    w: n.width ?? fallbackW,
+    h: n.height ?? fallbackH,
   }
+}
 
-  // Fast lookup for collapse flag.
-  const byId = new Map<string, Node<NodeData>>()
-  for (const n of nodes) byId.set(n.id, n)
-
-  const visible = new Set<string>()
-  const queue: string[] = []
-  for (const n of nodes) {
-    if (!n.parentId) queue.push(n.id)
-  }
-
-  while (queue.length > 0) {
-    const id = queue.shift()!
-    visible.add(id)
-    const node = byId.get(id)
-    if (node && !node.data.collapsed) {
-      const children = childrenByParent.get(id)
-      if (children) queue.push(...children)
-    }
-  }
-
-  return visible
+function centerInside(n: Node<NodeData>, b: BBox): boolean {
+  const w = n.width ?? DEFAULT_NODE_W
+  const h = n.height ?? DEFAULT_NODE_H
+  const cx = n.position.x + w / 2
+  const cy = n.position.y + h / 2
+  return cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h
 }
 
 /**
- * Rewire edges so that any endpoint inside a collapsed subtree is replaced
- * with the nearest visible ancestor (the collapsed zone the user actually
- * sees). Behaviour:
+ * Node ids whose centre lies inside the given zone, excluding the zone
+ * itself and any node that is a React Flow child (parentId set — those are
+ * positioned relative to their parent, not in absolute canvas coordinates).
+ */
+export function getZoneSpatialChildren(
+  zone: Node<NodeData>,
+  nodes: Node<NodeData>[],
+): string[] {
+  const zb = bboxOf(zone, DEFAULT_ZONE_W, DEFAULT_ZONE_H)
+  const out: string[] = []
+  for (const n of nodes) {
+    if (n.id === zone.id) continue
+    if (n.parentId) continue
+    if (centerInside(n, zb)) out.push(n.id)
+  }
+  return out
+}
+
+function buildChildrenByParent(nodes: Node<NodeData>[]): Map<string, string[]> {
+  const m = new Map<string, string[]>()
+  for (const n of nodes) {
+    if (!n.parentId) continue
+    const arr = m.get(n.parentId)
+    if (arr) arr.push(n.id)
+    else m.set(n.parentId, [n.id])
+  }
+  return m
+}
+
+export interface CollapseInfo {
+  /** Ids the canvas should render. */
+  visibleIds: Set<string>
+  /** For each hidden id, the id of the collapsed ancestor that hid it. */
+  hiddenBy: Map<string, string>
+}
+
+/**
+ * Single source of truth for visibility under collapse. O(n) over nodes
+ * (the spatial pass is O(z·n) where z is the number of collapsed zones).
+ */
+export function computeCollapseInfo(nodes: Node<NodeData>[]): CollapseInfo {
+  const childrenByParent = buildChildrenByParent(nodes)
+  const hidden = new Set<string>()
+  const hiddenBy = new Map<string, string>()
+
+  const hideSubtree = (rootId: string, hider: string) => {
+    const queue = [...(childrenByParent.get(rootId) ?? [])]
+    while (queue.length > 0) {
+      const id = queue.shift()!
+      if (hidden.has(id)) continue
+      hidden.add(id)
+      if (!hiddenBy.has(id)) hiddenBy.set(id, hider)
+      const sub = childrenByParent.get(id)
+      if (sub) queue.push(...sub)
+    }
+  }
+
+  // Pass 1 — parentId-based collapse (real containers).
+  for (const n of nodes) {
+    if (n.data.collapsed) hideSubtree(n.id, n.id)
+  }
+
+  // Pass 2 — spatial collapse (groupRect zones).
+  for (const n of nodes) {
+    if (n.data.type !== 'groupRect') continue
+    if (!n.data.collapsed) continue
+    const contained = getZoneSpatialChildren(n, nodes)
+    for (const id of contained) {
+      if (!hidden.has(id)) {
+        hidden.add(id)
+        if (!hiddenBy.has(id)) hiddenBy.set(id, n.id)
+      }
+      hideSubtree(id, n.id)
+    }
+  }
+
+  const visibleIds = new Set<string>()
+  for (const n of nodes) {
+    if (!hidden.has(n.id)) visibleIds.add(n.id)
+  }
+  return { visibleIds, hiddenBy }
+}
+
+/**
+ * Convenience wrapper kept for call sites that only need the visible set.
+ */
+export function getVisibleNodeIds(nodes: Node<NodeData>[]): Set<string> {
+  return computeCollapseInfo(nodes).visibleIds
+}
+
+/**
+ * Rewire edges so that any endpoint inside a collapsed subtree (parentId or
+ * spatial) is replaced with the nearest visible ancestor. See module
+ * docstring for the full rationale.
  *
- *  - Both endpoints visible → edge kept as-is.
- *  - One endpoint hidden    → endpoint replaced by its nearest visible
- *                             ancestor; edge surfaces as a "stub" on the
- *                             collapsed zone so the connection is not lost.
- *  - Both endpoints hidden under the *same* collapsed ancestor → dropped
- *                             (would be a self-loop on the zone).
- *  - Multiple original edges that rewire to the same (source, target) pair
- *    are de-duplicated; only the first is kept. Prevents a 20-device Zigbee
- *    mesh from rendering 20 stacked stub edges on the collapsed parent.
- *
- *  Edges with an endpoint whose ancestor chain never reaches a visible node
- *  (orphaned reference) are dropped.
+ *  - Both endpoints visible            → edge kept as-is.
+ *  - One endpoint hidden                → endpoint replaced by its nearest
+ *                                         visible ancestor; edge surfaces
+ *                                         as a stub on the collapsed zone.
+ *  - Both endpoints hidden under the
+ *    same visible ancestor              → dropped (would be a self-loop).
+ *  - Parallel rewires to the same pair  → de-duplicated; one stub kept.
+ *    (Prevents a 20-device mesh from rendering 20 stacked stubs.)
+ *  - Endpoint with no visible ancestor  → dropped.
  */
 export function rewireEdgesForCollapse(
   edges: Edge<EdgeData>[],
   nodes: Node<NodeData>[],
   visibleIds: Set<string>,
+  hiddenBy?: Map<string, string>,
 ): Edge<EdgeData>[] {
-  const parentOf = new Map<string, string | undefined>()
-  for (const n of nodes) parentOf.set(n.id, n.parentId)
+  // If the caller already computed hiddenBy (CanvasContainer path), reuse
+  // it. Otherwise recompute — keeps the helper callable from tests without
+  // forcing them to thread the second map through.
+  const hb = hiddenBy ?? computeCollapseInfo(nodes).hiddenBy
 
   const nearestVisible = (id: string): string | null => {
     let cur: string | undefined = id
-    // Walk up parentId chain until we hit a visible node or run out.
+    const guard = new Set<string>()
     while (cur !== undefined) {
       if (visibleIds.has(cur)) return cur
-      cur = parentOf.get(cur)
+      if (guard.has(cur)) return null
+      guard.add(cur)
+      cur = hb.get(cur)
     }
     return null
   }
@@ -93,8 +189,6 @@ export function rewireEdgesForCollapse(
     if (src === e.source && tgt === e.target) {
       out.push(e)
     } else {
-      // Endpoint moved → strip handle hints that referred to the original
-      // (hidden) node; let React Flow pick defaults on the visible ancestor.
       out.push({ ...e, source: src, target: tgt, sourceHandle: null, targetHandle: null })
     }
   }

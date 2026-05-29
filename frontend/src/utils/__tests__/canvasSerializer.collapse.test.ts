@@ -81,3 +81,71 @@ describe('canvasSerializer — groupRect collapse', () => {
     expect(back.data.collapsed).toBe(true)
   })
 })
+
+describe('canvasSerializer — collapse on non-groupRect node types', () => {
+  it('stashes data.collapsed into custom_colors for a group container', () => {
+    const rf: Node<NodeData> = {
+      id: 'g1',
+      type: 'group',
+      position: { x: 0, y: 0 },
+      data: {
+        label: 'Container',
+        type: 'group',
+        status: 'unknown',
+        services: [],
+        custom_colors: { show_border: true },
+        collapsed: true,
+      },
+    }
+    const api = serializeNode(rf) as Record<string, unknown>
+    const cc = api.custom_colors as Record<string, unknown>
+    expect(cc.collapsed).toBe(true)
+    // Existing custom_colors keys are preserved alongside the stash.
+    expect(cc.show_border).toBe(true)
+  })
+
+  it('leaves custom_colors null when neither flag nor colors are set', () => {
+    const rf: Node<NodeData> = {
+      id: 's1',
+      type: 'server',
+      position: { x: 0, y: 0 },
+      data: { label: 'Server', type: 'server', status: 'online', services: [] },
+    }
+    const api = serializeNode(rf) as Record<string, unknown>
+    expect(api.custom_colors).toBeNull()
+  })
+
+  it('hoists custom_colors.collapsed to data.collapsed for a group container', () => {
+    const apiNode: ApiNode = {
+      id: 'g1',
+      type: 'group',
+      label: 'Container',
+      pos_x: 0,
+      pos_y: 0,
+      status: 'unknown',
+      services: [],
+      custom_colors: { show_border: true, collapsed: true },
+    }
+    const rf = deserializeApiNode(apiNode, new Map())
+    expect(rf.data.collapsed).toBe(true)
+  })
+
+  it('round-trips collapse on a group container', () => {
+    const rf: Node<NodeData> = {
+      id: 'g1',
+      type: 'group',
+      position: { x: 0, y: 0 },
+      data: {
+        label: 'Container',
+        type: 'group',
+        status: 'unknown',
+        services: [],
+        custom_colors: { show_border: true },
+        collapsed: true,
+      },
+    }
+    const api = serializeNode(rf) as unknown as ApiNode
+    const back = deserializeApiNode(api, new Map())
+    expect(back.data.collapsed).toBe(true)
+  })
+})
