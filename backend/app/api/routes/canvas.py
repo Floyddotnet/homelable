@@ -42,7 +42,7 @@ async def load_canvas(
 @router.post("/save")
 async def save_canvas(
     body: CanvasSaveRequest, db: AsyncSession = Depends(get_db), _: str = Depends(get_current_user)
-) -> dict[str, bool]:
+) -> dict[str, bool | str]:
     design_id = body.design_id
     if design_id is None:
         first = (await db.execute(select(Design).order_by(Design.created_at).limit(1))).scalar()

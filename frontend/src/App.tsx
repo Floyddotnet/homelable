@@ -45,7 +45,7 @@ export default function App() {
   const canvasRef = useRef<HTMLDivElement>(null)
   const { isAuthenticated } = useAuthStore()
   const { activeTheme, setTheme, customStyle, setCustomStyle } = useThemeStore()
-  const { designs, activeDesignId, activeDesignType, setDesigns, setActiveDesign } = useDesignStore()
+  const { activeDesignId, setDesigns, setActiveDesign } = useDesignStore()
 
   useStatusPolling()
 

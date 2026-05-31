@@ -186,7 +186,7 @@ async def init_db() -> None:
         # Seed default Network Topology design if designs table is empty
         _default_design_id = str(_uuid_mod.uuid4())
         row = await conn.exec_driver_sql("SELECT COUNT(*) FROM designs")
-        count = (await row.fetchone())[0]
+        count = (row.fetchone())[0]
         if count == 0:
             await conn.exec_driver_sql(
                 "INSERT INTO designs (id, name, design_type, created_at, updated_at) "
@@ -195,7 +195,7 @@ async def init_db() -> None:
             )
         else:
             row2 = await conn.exec_driver_sql("SELECT id FROM designs WHERE design_type = 'network' LIMIT 1")
-            default = await row2.fetchone()
+            default = row2.fetchone()
             _default_design_id = default[0] if default else _default_design_id
 
         # Add design_id to nodes
@@ -261,8 +261,8 @@ async def init_db() -> None:
                 "SELECT id, cpu_model, cpu_count, ram_gb, disk_gb, show_hardware "
                 "FROM nodes WHERE properties IS NULL"
             )
-            for row in rows.fetchall():
-                node_id, cpu_model, cpu_count, ram_gb, disk_gb, show_hardware = row
+            for r in rows.fetchall():
+                node_id, cpu_model, cpu_count, ram_gb, disk_gb, show_hardware = r
                 props = []
                 visible = bool(show_hardware)
                 if cpu_model:
