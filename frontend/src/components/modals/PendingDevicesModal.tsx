@@ -383,8 +383,10 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
+    // statusFilter is included so Enter dispatches the correct bulk action
+    // (approve vs restore) even if the device list doesn't change on switch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, selectMode, selectedIds, filtered])
+  }, [open, selectMode, selectedIds, filtered, statusFilter])
 
   return (
     <>
@@ -421,7 +423,6 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
                   render={
                     <button
                       className="text-muted-foreground hover:text-foreground p-1.5 rounded transition-colors"
-                      title="Close"
                       aria-label="Close"
                     />
                   }
