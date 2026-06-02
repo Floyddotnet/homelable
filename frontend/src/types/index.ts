@@ -4,6 +4,8 @@ export interface Design {
   id: string
   name: string
   design_type: DesignType
+  /** Lucide icon key (see utils/designIcons). User-chosen; may be null on legacy rows. */
+  icon?: string | null
   created_at: string
   updated_at: string
 }

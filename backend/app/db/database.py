@@ -183,6 +183,19 @@ async def init_db() -> None:
             ")",
             label="designs.table",
         )
+        # Add user-chosen icon to designs (idempotent), then backfill existing rows
+        # so legacy designs keep a sensible icon based on their original type.
+        await _try_migrate(
+            conn, "ALTER TABLE designs ADD COLUMN icon VARCHAR", label="designs.icon",
+        )
+        with suppress(OperationalError):
+            await conn.exec_driver_sql(
+                "UPDATE designs SET icon = 'zap' WHERE icon IS NULL AND design_type = 'electrical'"
+            )
+        with suppress(OperationalError):
+            await conn.exec_driver_sql(
+                "UPDATE designs SET icon = 'dashboard' WHERE icon IS NULL"
+            )
         # Seed default Network Topology design if designs table is empty
         _default_design_id = str(_uuid_mod.uuid4())
         row = await conn.exec_driver_sql("SELECT COUNT(*) FROM designs")
@@ -190,8 +203,8 @@ async def init_db() -> None:
         count = count_row[0] if count_row else 0
         if count == 0:
             await conn.exec_driver_sql(
-                "INSERT INTO designs (id, name, design_type, created_at, updated_at) "
-                "VALUES (?, 'Network Topology', 'network', datetime('now'), datetime('now'))",
+                "INSERT INTO designs (id, name, design_type, icon, created_at, updated_at) "
+                "VALUES (?, 'Network Topology', 'network', 'dashboard', datetime('now'), datetime('now'))",
                 (_default_design_id,),
             )
         else:

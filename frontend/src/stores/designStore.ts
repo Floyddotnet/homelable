@@ -9,6 +9,12 @@ interface DesignState {
   setDesigns: (designs: Design[]) => void
   setActiveDesign: (id: string) => void
   getActiveDesign: () => Design | null
+  /** Append a new design and make it active. */
+  addDesign: (design: Design) => void
+  /** Patch an existing design in place (name/icon edits). */
+  updateDesign: (id: string, patch: Partial<Pick<Design, 'name' | 'icon'>>) => void
+  /** Remove a design; if it was active, fall back to the first remaining one. */
+  removeDesign: (id: string) => void
 }
 
 export const useDesignStore = create<DesignState>((set, get) => ({
@@ -39,4 +45,28 @@ export const useDesignStore = create<DesignState>((set, get) => ({
     const { designs, activeDesignId } = get()
     return designs.find((d) => d.id === activeDesignId) ?? null
   },
+
+  addDesign: (design) =>
+    set((state) => ({
+      designs: [...state.designs, design],
+      activeDesignId: design.id,
+      activeDesignType: design.design_type,
+    })),
+
+  updateDesign: (id, patch) =>
+    set((state) => ({
+      designs: state.designs.map((d) => (d.id === id ? { ...d, ...patch } : d)),
+    })),
+
+  removeDesign: (id) =>
+    set((state) => {
+      const designs = state.designs.filter((d) => d.id !== id)
+      if (state.activeDesignId !== id) return { designs }
+      const next = designs[0] ?? null
+      return {
+        designs,
+        activeDesignId: next?.id ?? null,
+        activeDesignType: next?.design_type ?? null,
+      }
+    }),
 }))

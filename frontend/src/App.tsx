@@ -72,23 +72,27 @@ export default function App() {
   const [exportModalOpen, setExportModalOpen] = useState(false)
   const [zigbeeImportOpen, setZigbeeImportOpen] = useState(false)
 
-  // Declare handleSave before the Ctrl+S effect so it is in scope
-  const handleSave = useCallback(async (designIdOverride?: string) => {
+  // Declare handleSave before the Ctrl+S effect so it is in scope.
+  // Returns true on success, false on failure — the design-switch effect relies
+  // on this to avoid loading (and clobbering) the canvas when a save fails.
+  const handleSave = useCallback(async (designIdOverride?: string): Promise<boolean> => {
     try {
       const saveDesignId = designIdOverride ?? activeDesignId
       if (STANDALONE) {
         localStorage.setItem(STANDALONE_STORAGE_KEY, JSON.stringify({ nodes, edges, theme_id: activeTheme, custom_style: customStyle }))
         markSaved()
         toast.success('Canvas saved')
-        return
+        return true
       }
       const nodesToSave = nodes.map(serializeNode)
       const edgesToSave = edges.map(serializeEdge)
       await canvasApi.save({ nodes: nodesToSave, edges: edgesToSave, viewport: { theme_id: activeTheme }, custom_style: customStyle, design_id: saveDesignId })
       markSaved()
       toast.success('Canvas saved')
+      return true
     } catch {
       toast.error('Save failed')
+      return false
     }
   }, [nodes, edges, markSaved, activeTheme, customStyle, activeDesignId])
 
@@ -162,16 +166,37 @@ export default function App() {
   // Reload canvas when active design changes (after initial load)
   const initialLoadDone = useRef(false)
   const prevDesignRef = useRef<string | null>(null)
+  // Set while we programmatically revert activeDesignId after a failed save, so
+  // the re-entrant effect run skips save/load and just re-syncs the refs.
+  const revertingRef = useRef(false)
   useEffect(() => {
+    if (revertingRef.current) {
+      revertingRef.current = false
+      prevDesignRef.current = activeDesignId
+      return
+    }
     if (!STANDALONE && isAuthenticated && activeDesignId && initialLoadDone.current) {
       const oldId = prevDesignRef.current
-      if (oldId && oldId !== activeDesignId) {
+      // If the previous design was deleted (no longer in the list), don't try to
+      // save into it — just load the newly-selected design.
+      const oldStillExists = oldId ? useDesignStore.getState().designs.some((d) => d.id === oldId) : false
+      if (oldId && oldId !== activeDesignId && oldStillExists) {
         // Save current (old) canvas data under the old design ID before switching.
         // We call handleSave directly (not via ref) so it runs in this effect's
         // closure where activeDesignId is already the NEW value — the override
         // ensures data is stored under the correct design_id.
-        handleSave(oldId).then(() => {
-          loadCanvasFromApi(activeDesignId)
+        const targetId = activeDesignId
+        handleSave(oldId).then((ok) => {
+          if (ok) {
+            loadCanvasFromApi(targetId)
+          } else {
+            // Save failed: don't load the new design — that would overwrite the
+            // unsaved in-memory canvas. Revert the selection back to the old
+            // design so the UI matches the data still on screen.
+            toast.error('Switch cancelled — unsaved changes kept')
+            revertingRef.current = true
+            setActiveDesign(oldId)
+          }
         })
       } else {
         loadCanvasFromApi(activeDesignId)

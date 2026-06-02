@@ -25,7 +25,7 @@ async def create_design(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(get_current_user),
 ) -> DesignResponse:
-    design = Design(name=body.name, design_type=body.design_type)
+    design = Design(name=body.name, design_type=body.design_type, icon=body.icon)
     db.add(design)
     await db.flush()
     # Create empty canvas state for the new design
@@ -47,6 +47,8 @@ async def update_design(
         raise HTTPException(404, "Design not found")
     if body.name is not None:
         design.name = body.name
+    if body.icon is not None:
+        design.icon = body.icon
     await db.commit()
     await db.refresh(design)
     return DesignResponse.model_validate(design)

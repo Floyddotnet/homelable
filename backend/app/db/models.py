@@ -22,6 +22,7 @@ class Design(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String, nullable=False)
     design_type: Mapped[str] = mapped_column(String, nullable=False, default="network")
+    icon: Mapped[str | None] = mapped_column(String, nullable=True, default="dashboard")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 

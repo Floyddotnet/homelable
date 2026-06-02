@@ -95,9 +95,9 @@ export const settingsApi = {
 
 export const designsApi = {
   list: () => api.get<import('@/types').Design[]>('/designs'),
-  create: (data: { name: string; design_type: string }) =>
+  create: (data: { name: string; icon?: string; design_type?: string }) =>
     api.post<import('@/types').Design>('/designs', data),
-  update: (id: string, data: { name?: string }) =>
+  update: (id: string, data: { name?: string; icon?: string }) =>
     api.put<import('@/types').Design>(`/designs/${id}`, data),
   delete: (id: string) => api.delete(`/designs/${id}`),
 }
