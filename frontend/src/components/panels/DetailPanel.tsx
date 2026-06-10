@@ -21,7 +21,7 @@ type PropForm = { key: string; value: string; icon: string | null; visible: bool
 const EMPTY_PROP: PropForm = { key: '', value: '', icon: null, visible: true }
 
 export function DetailPanel({ onEdit }: DetailPanelProps) {
-  const { nodes, selectedNodeId, selectedNodeIds, setSelectedNode, deleteNode, updateNode, snapshotHistory, createGroup, ungroup } = useCanvasStore()
+  const { nodes, selectedNodeId, selectedNodeIds, setSelectedNode, deleteNode, updateNode, snapshotHistory, createGroup, ungroup, removeFromGroup } = useCanvasStore()
   const serviceStatuses = useCanvasStore((s) => s.serviceStatuses)
 
   const [addingForNode, setAddingForNode] = useState<string | null>(null)
@@ -65,6 +65,11 @@ export function DetailPanel({ onEdit }: DetailPanelProps) {
         node={node}
         nodes={nodes}
         onUngroup={() => { ungroup(node.id) }}
+        onRemoveChild={(id) => { snapshotHistory(); removeFromGroup(node.id, id) }}
+        onChangeDescription={(value) => {
+          snapshotHistory()
+          updateNode(node.id, { notes: value })
+        }}
         onToggleBorder={() => {
           snapshotHistory()
           updateNode(node.id, {
@@ -426,16 +431,26 @@ interface GroupDetailPanelProps {
   node: Node<NodeData>
   nodes: Node<NodeData>[]
   onUngroup: () => void
+  onRemoveChild: (id: string) => void
+  onChangeDescription: (value: string) => void
   onToggleBorder: () => void
   onClose: () => void
   onSelectChild: (id: string) => void
 }
 
-function GroupDetailPanel({ node, nodes, onUngroup, onToggleBorder, onClose, onSelectChild }: GroupDetailPanelProps) {
+function GroupDetailPanel({ node, nodes, onUngroup, onRemoveChild, onChangeDescription, onToggleBorder, onClose, onSelectChild }: GroupDetailPanelProps) {
   const children = nodes.filter((n) => n.parentId === node.id)
   const onlineCount = children.filter((n) => n.data.status === 'online').length
   const offlineCount = children.filter((n) => n.data.status === 'offline').length
   const showBorder = node.data.custom_colors?.show_border !== false
+
+  // Description reuses data.notes, which already round-trips to the backend.
+  // Uncontrolled textarea (keyed by node id) so we only snapshot history on blur,
+  // not on every keystroke. `key` resets the field when switching groups.
+  const commitDescription = (value: string) => {
+    if (value === (node.data.notes ?? '')) return
+    onChangeDescription(value)
+  }
 
   const handleUngroup = () => {
     if (confirm(`Ungroup "${node.data.label}"? Nodes will be released to the canvas.`)) {
@@ -462,20 +477,48 @@ function GroupDetailPanel({ node, nodes, onUngroup, onToggleBorder, onClose, onS
         {offlineCount > 0 && <span style={{ color: STATUS_COLORS.offline }}>● {offlineCount} offline</span>}
       </div>
 
+      {/* Description */}
+      <div className="px-4 py-3 border-b border-border">
+        <label htmlFor="group-description" className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+          Description
+        </label>
+        <textarea
+          id="group-description"
+          key={node.id}
+          defaultValue={node.data.notes ?? ''}
+          onBlur={(e) => commitDescription(e.target.value)}
+          placeholder="Add a description for this group…"
+          rows={3}
+          className="mt-1.5 w-full resize-y rounded-md bg-[#21262d] border border-[#30363d] px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#00d4ff]/50"
+        />
+      </div>
+
       {/* Children list */}
       <div className="flex-1 px-4 py-3 space-y-1.5 overflow-y-auto">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Members</span>
         {children.length === 0 && <p className="text-xs text-muted-foreground/50">No nodes in this group.</p>}
         {children.map((child) => (
-          <button
+          <div
             key={child.id}
-            onClick={() => onSelectChild(child.id)}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md bg-[#21262d] text-xs hover:bg-[#30363d] transition-colors text-left"
+            className="group/member w-full flex items-center gap-2 px-2 py-1.5 rounded-md bg-[#21262d] text-xs hover:bg-[#30363d] transition-colors"
           >
-            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_COLORS[child.data.status] }} />
-            <span className="truncate text-foreground font-medium">{child.data.label}</span>
-            <span className="ml-auto text-muted-foreground shrink-0">{NODE_TYPE_LABELS[child.data.type] ?? child.data.type}</span>
-          </button>
+            <button
+              onClick={() => onSelectChild(child.id)}
+              className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer"
+            >
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_COLORS[child.data.status] }} />
+              <span className="truncate text-foreground font-medium">{child.data.label}</span>
+              <span className="ml-auto text-muted-foreground shrink-0">{NODE_TYPE_LABELS[child.data.type] ?? child.data.type}</span>
+            </button>
+            <button
+              onClick={() => onRemoveChild(child.id)}
+              aria-label={`Remove ${child.data.label} from group`}
+              title="Remove from group"
+              className="shrink-0 opacity-0 group-hover/member:opacity-100 transition-opacity text-[#8b949e] hover:text-[#f85149] cursor-pointer"
+            >
+              <X size={12} />
+            </button>
+          </div>
         ))}
       </div>
 

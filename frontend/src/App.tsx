@@ -28,6 +28,7 @@ import { ThemeModal } from '@/components/modals/ThemeModal'
 import { SearchModal } from '@/components/modals/SearchModal'
 import { PendingDevicesModal } from '@/components/modals/PendingDevicesModal'
 import { ShortcutsModal } from '@/components/modals/ShortcutsModal'
+import { ConfirmAddToGroupModal } from '@/components/modals/ConfirmAddToGroupModal'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { useDesignStore } from '@/stores/designStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -42,7 +43,7 @@ const STANDALONE = import.meta.env.VITE_STANDALONE === 'true'
 const STANDALONE_STORAGE_KEY = 'homelable_canvas'
 
 export default function App() {
-  const { loadCanvas, markSaved, markUnsaved, selectedNodeId, selectedNodeIds, addNode, updateNode, deleteNode, onConnect, updateEdge, deleteEdge, setProxmoxContainerMode, setNodeZIndex, editingGroupRectId, setEditingGroupRectId, editingTextId, setEditingTextId, nodes, edges, snapshotHistory, undo, redo } = useCanvasStore()
+  const { loadCanvas, markSaved, markUnsaved, selectedNodeId, selectedNodeIds, addNode, updateNode, deleteNode, onConnect, updateEdge, deleteEdge, setProxmoxContainerMode, setNodeZIndex, editingGroupRectId, setEditingGroupRectId, editingTextId, setEditingTextId, nodes, edges, snapshotHistory, undo, redo, addToGroup } = useCanvasStore()
   const canvasRef = useRef<HTMLDivElement>(null)
   const { isAuthenticated } = useAuthStore()
   const { activeTheme, setTheme, customStyle, setCustomStyle } = useThemeStore()
@@ -68,6 +69,7 @@ export default function App() {
   const [addTextOpen, setAddTextOpen] = useState(false)
   const [editNodeId, setEditNodeId] = useState<string | null>(null)
   const [pendingConnection, setPendingConnection] = useState<Connection | null>(null)
+  const [pendingGroupAdd, setPendingGroupAdd] = useState<{ nodeId: string; groupId: string } | null>(null)
   const [editEdgeId, setEditEdgeId] = useState<string | null>(null)
   const [scanConfigOpen, setScanConfigOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -631,6 +633,7 @@ export default function App() {
                   onEdgeDoubleClick={handleEdgeDoubleClick}
                   onNodeDoubleClick={handleNodeDoubleClick}
                   onNodeDragStart={snapshotHistory}
+                  onRequestAddToGroup={setPendingGroupAdd}
                   onOpenPending={(deviceId) => openPendingModal(deviceId)}
                 />
               </div>
@@ -803,6 +806,17 @@ export default function App() {
           onOpenPending={(deviceId) => openPendingModal(deviceId)}
         />
         <ShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+        <ConfirmAddToGroupModal
+          open={!!pendingGroupAdd}
+          nodeLabel={pendingGroupAdd ? (nodes.find((n) => n.id === pendingGroupAdd.nodeId)?.data.label ?? '') : ''}
+          groupLabel={pendingGroupAdd ? (nodes.find((n) => n.id === pendingGroupAdd.groupId)?.data.label ?? '') : ''}
+          onConfirm={() => {
+            if (pendingGroupAdd) addToGroup(pendingGroupAdd.groupId, pendingGroupAdd.nodeId)
+            setPendingGroupAdd(null)
+          }}
+          onCancel={() => setPendingGroupAdd(null)}
+        />
 
         {!STANDALONE && (
           <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
