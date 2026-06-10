@@ -54,7 +54,7 @@ async def broadcast_status(node_id: str, status: str, checked_at: str, response_
     }))
 
 
-async def broadcast_service_status(node_id: str, services: list[dict], checked_at: str) -> None:
+async def broadcast_service_status(node_id: str, services: list[dict[str, object]], checked_at: str) -> None:
     await _broadcast(json.dumps({
         "type": "service_status",
         "node_id": node_id,
