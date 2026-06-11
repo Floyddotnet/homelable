@@ -68,6 +68,8 @@ interface CanvasState {
   toggleNodeCollapsed: (id: string) => void
   createGroup: (nodeIds: string[], name: string) => void
   ungroup: (groupId: string) => void
+  addToGroup: (groupId: string, childId: string) => void
+  removeFromGroup: (groupId: string, childId: string) => void
   markSaved: () => void
   markUnsaved: () => void
   loadCanvas: (nodes: Node<NodeData>[], edges: Edge<EdgeData>[]) => void
@@ -577,6 +579,77 @@ export const useCanvasStore = create<CanvasState>((set) => ({
         nodes,
         selectedNodeId: null,
         selectedNodeIds: [],
+        hasUnsavedChanges: true,
+        past: [...state.past.slice(-49), { nodes: state.nodes, edges: state.edges }],
+        future: [],
+      }
+    }),
+
+  // Nest an existing top-level node inside a group. Inverse of removeFromGroup.
+  addToGroup: (groupId, childId) =>
+    set((state) => {
+      const group = state.nodes.find((n) => n.id === groupId)
+      const child = state.nodes.find((n) => n.id === childId)
+      if (!group || !child || group.data.type !== 'group') return state
+      if (child.id === groupId || child.parentId === groupId) return state
+
+      const updatedNodes = state.nodes.map((n) => {
+        if (n.id !== childId) return n
+        return {
+          ...n,
+          parentId: groupId,
+          extent: 'parent' as const,
+          // Absolute → group-relative. Clamp so the node stays inside the box.
+          position: {
+            x: Math.max(8, n.position.x - group.position.x),
+            y: Math.max(8, n.position.y - group.position.y),
+          },
+          selected: false,
+          data: { ...n.data, parent_id: groupId },
+        }
+      })
+
+      // React Flow requires the parent to precede its children in the array.
+      const others = updatedNodes.filter((n) => n.id !== childId)
+      const movedChild = updatedNodes.find((n) => n.id === childId)!
+      const groupIdx = others.findIndex((n) => n.id === groupId)
+      const nodes = [
+        ...others.slice(0, groupIdx + 1),
+        movedChild,
+        ...others.slice(groupIdx + 1),
+      ]
+
+      return {
+        nodes,
+        hasUnsavedChanges: true,
+        past: [...state.past.slice(-49), { nodes: state.nodes, edges: state.edges }],
+        future: [],
+      }
+    }),
+
+  // Release a single child from a group back to the canvas. Group stays.
+  removeFromGroup: (groupId, childId) =>
+    set((state) => {
+      const group = state.nodes.find((n) => n.id === groupId)
+      const child = state.nodes.find((n) => n.id === childId)
+      if (!group || !child || child.parentId !== groupId) return state
+
+      const nodes = state.nodes.map((n) => {
+        if (n.id !== childId) return n
+        return {
+          ...n,
+          parentId: undefined,
+          extent: undefined,
+          position: {
+            x: n.position.x + group.position.x,
+            y: n.position.y + group.position.y,
+          },
+          data: { ...n.data, parent_id: undefined },
+        }
+      })
+
+      return {
+        nodes,
         hasUnsavedChanges: true,
         past: [...state.past.slice(-49), { nodes: state.nodes, edges: state.edges }],
         future: [],
