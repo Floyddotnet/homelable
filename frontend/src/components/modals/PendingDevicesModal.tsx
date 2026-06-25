@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Globe, Router, Server, Layers, Box, Container, HardDrive, Cpu, Wifi, Circle, Network,
-  Search, RefreshCw, X, CheckCircle2, EyeOff, Trash2, Loader2,
+  Search, RefreshCw, X, CheckCircle2, EyeOff, Trash2, Loader2, ServerCog,
 } from 'lucide-react'
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { scanApi } from '@/api/client'
@@ -121,6 +121,8 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialStatus)
   // Inventory shows on-canvas devices by default; toggle off to hide them.
   const [showOnCanvas, setShowOnCanvas] = useState(true)
+  // Optionally restrict to devices that have at least one detected service.
+  const [withServicesOnly, setWithServicesOnly] = useState(false)
   const { addNode, scanEventTs } = useCanvasStore()
   const highlightRef = useRef<HTMLButtonElement>(null)
 
@@ -163,6 +165,7 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
       if (typeFilter !== 'all' && d.suggested_type !== typeFilter) return false
       // Inventory-only: optionally hide devices already placed on a canvas.
       if (statusFilter === 'pending' && !showOnCanvas && (d.canvas_count ?? 0) > 0) return false
+      if (withServicesOnly && (d.services?.length ?? 0) === 0) return false
       if (q) {
         const hay = [
           d.friendly_name, d.hostname, d.ip, d.mac, d.ieee_address, d.vendor, d.model,
@@ -172,7 +175,7 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
       }
       return true
     })
-  }, [devices, search, sourceFilter, typeFilter, statusFilter, showOnCanvas])
+  }, [devices, search, sourceFilter, typeFilter, statusFilter, showOnCanvas, withServicesOnly])
 
   useEffect(() => {
     if (!highlightId || loading || !open) return
@@ -505,6 +508,15 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
                 {showOnCanvas ? 'Hide on-canvas' : 'Show on-canvas'}
               </button>
             )}
+            <button
+              onClick={() => setWithServicesOnly((v) => !v)}
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded border transition-colors ${withServicesOnly ? 'bg-[#00d4ff]/20 text-[#00d4ff] border-[#00d4ff]/50' : 'bg-[#0d1117] text-muted-foreground border-border hover:text-foreground'}`}
+              title="Only show devices with at least one detected service"
+              aria-pressed={withServicesOnly}
+            >
+              <ServerCog size={12} />
+              With services
+            </button>
             <button
               onClick={() => selectMode ? exitSelectMode() : enterSelectMode()}
               className={`text-xs px-2.5 py-1.5 rounded border transition-colors ${selectMode ? 'bg-[#00d4ff]/20 text-[#00d4ff] border-[#00d4ff]/50' : 'bg-[#0d1117] text-muted-foreground border-border hover:text-foreground'}`}

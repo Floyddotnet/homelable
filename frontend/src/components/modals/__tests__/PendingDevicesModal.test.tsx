@@ -309,6 +309,15 @@ describe('PendingDevicesModal', () => {
     expect(screen.queryByLabelText(/On \d+ canvas/)).not.toBeInTheDocument()
   })
 
+  it('filters to devices with detected services when "With services" is on', async () => {
+    // dev-a has an http service; dev-b (zigbee) has none.
+    render(<PendingDevicesModal {...baseProps} />)
+    await waitFor(() => expect(screen.getByTestId('pending-card-dev-b')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /With services/ }))
+    expect(screen.getByTestId('pending-card-dev-a')).toBeInTheDocument()
+    expect(screen.queryByTestId('pending-card-dev-b')).not.toBeInTheDocument()
+  })
+
   it('shows on-canvas devices by default and hides them when toggled off', async () => {
     mockPending.mockResolvedValue({
       data: [DEVICE_IP, { ...DEVICE_ZIGBEE, canvas_count: 1 }],
