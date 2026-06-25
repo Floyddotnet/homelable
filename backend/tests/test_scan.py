@@ -477,6 +477,59 @@ async def test_run_scan_records_ip_already_in_canvas(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_run_scan_refreshes_approved_device_without_duplicating(db_session: AsyncSession):
+    """Re-scanning an already-approved device updates its row in place instead of
+    spawning a fresh pending duplicate, and keeps it approved."""
+    approved = PendingDevice(
+        id=str(uuid.uuid4()), ip="192.168.1.50", mac=None, hostname="old",
+        os=None, services=[], suggested_type="server", status="approved",
+    )
+    db_session.add(approved)
+    run_id = str(uuid.uuid4())
+    db_session.add(ScanRun(id=run_id, status="running", ranges=["192.168.1.0/24"]))
+    await db_session.commit()
+
+    with (
+        patch("app.services.scanner._nmap_scan", return_value=[MOCK_HOST]),
+        patch("app.api.routes.status.broadcast_scan_update", new_callable=AsyncMock),
+    ):
+        await run_scan(["192.168.1.0/24"], db_session, run_id)
+
+    rows = (await db_session.execute(
+        select(PendingDevice).where(PendingDevice.ip == "192.168.1.50")
+    )).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].status == "approved"
+    assert rows[0].hostname == "myhost.lan"  # refreshed from the scan
+
+
+@pytest.mark.asyncio
+async def test_run_scan_collapses_existing_duplicate_rows(db_session: AsyncSession):
+    """Pre-existing duplicate inventory rows for one IP are collapsed to a single
+    row at scan start, even if the device is not re-discovered."""
+    for status in ("approved", "pending", "pending"):
+        db_session.add(PendingDevice(
+            id=str(uuid.uuid4()), ip="192.168.1.77", mac=None, hostname=None,
+            os=None, services=[], suggested_type="server", status=status,
+        ))
+    run_id = str(uuid.uuid4())
+    db_session.add(ScanRun(id=run_id, status="running", ranges=["192.168.1.0/24"]))
+    await db_session.commit()
+
+    with (
+        patch("app.services.scanner._nmap_scan", return_value=[]),
+        patch("app.api.routes.status.broadcast_scan_update", new_callable=AsyncMock),
+    ):
+        await run_scan(["192.168.1.0/24"], db_session, run_id)
+
+    rows = (await db_session.execute(
+        select(PendingDevice).where(PendingDevice.ip == "192.168.1.77")
+    )).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].status == "approved"  # approved row is the one kept
+
+
+@pytest.mark.asyncio
 async def test_run_scan_skips_hidden_device(db_session: AsyncSession):
     """Devices previously hidden by the user must not re-appear in pending on re-scan."""
     hidden = PendingDevice(

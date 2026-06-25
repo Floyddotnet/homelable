@@ -410,6 +410,38 @@ def _mock_scan(target: str) -> list[dict[str, Any]]:
     ]
 
 
+async def _dedupe_pending_by_ip(db: AsyncSession) -> int:
+    """Collapse duplicate non-hidden inventory rows that share an IP into one.
+
+    Keeps an ``approved`` row when present (it carries canvas-link semantics),
+    otherwise the oldest row, and deletes the rest. Returns the number deleted.
+    """
+    rows = (await db.execute(
+        select(PendingDevice)
+        .where(PendingDevice.status != "hidden", PendingDevice.ip.isnot(None))
+        .order_by(PendingDevice.discovered_at)
+    )).scalars().all()
+
+    by_ip: dict[str, list[PendingDevice]] = {}
+    for row in rows:
+        if row.ip is None:  # guarded by the query, but keeps the type checker happy
+            continue
+        by_ip.setdefault(row.ip, []).append(row)
+
+    deleted = 0
+    for group in by_ip.values():
+        if len(group) < 2:
+            continue
+        keep = next((r for r in group if r.status == "approved"), group[0])
+        for dup in group:
+            if dup is not keep:
+                await db.delete(dup)
+                deleted += 1
+    if deleted:
+        await db.commit()
+    return deleted
+
+
 async def run_scan(
     ranges: list[str],
     db: AsyncSession,
@@ -440,6 +472,11 @@ async def run_scan(
         )
         hidden_ips: set[str] = {row[0] for row in hidden_ips_result.fetchall()}
 
+        # Collapse any pre-existing duplicate inventory rows (same IP, non-hidden)
+        # left over from older scans, so the device shows up exactly once even if
+        # it isn't re-discovered this run (e.g. now offline).
+        await _dedupe_pending_by_ip(db)
+
         # Start mDNS discovery in the background while nmap scans run
         mdns_task = asyncio.create_task(_mdns_discover())
 
@@ -468,19 +505,30 @@ async def run_scan(
             services = fingerprint_ports(open_ports)
             suggested_type = suggest_node_type(open_ports, host.get("mac"))
 
-            existing_result = await db.execute(
-                select(PendingDevice).where(
-                    PendingDevice.ip == ip,
-                    PendingDevice.status == "pending",
-                )
-            )
-            existing = existing_result.scalar_one_or_none()
-            if existing:
-                existing.mac = host.get("mac") or existing.mac
-                existing.hostname = host.get("hostname") or existing.hostname
-                existing.os = host.get("os") or existing.os
-                existing.services = services
-                existing.suggested_type = suggested_type
+            # One inventory row per device (by IP). Match across pending AND
+            # approved so a re-scan of an already-approved device refreshes its
+            # row instead of spawning a fresh "pending" duplicate. Hidden rows
+            # are already skipped above.
+            existing_rows = (await db.execute(
+                select(PendingDevice)
+                .where(PendingDevice.ip == ip, PendingDevice.status != "hidden")
+                .order_by(PendingDevice.discovered_at)
+            )).scalars().all()
+
+            if existing_rows:
+                # Prefer an approved row (it owns the canvas link semantics),
+                # otherwise the oldest. Collapse any leftover duplicates created
+                # by earlier scans.
+                keep = next((r for r in existing_rows if r.status == "approved"), existing_rows[0])
+                for dup in existing_rows:
+                    if dup is not keep:
+                        await db.delete(dup)
+                keep.mac = host.get("mac") or keep.mac
+                keep.hostname = host.get("hostname") or keep.hostname
+                keep.os = host.get("os") or keep.os
+                keep.services = services
+                keep.suggested_type = suggested_type
+                # status preserved — an approved device stays approved.
             else:
                 db.add(PendingDevice(
                     ip=ip,
