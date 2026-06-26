@@ -6,6 +6,7 @@ import { serializeNode, serializeEdge, deserializeApiNode, deserializeApiEdge, t
 import { generateUUID } from '@/utils/uuid'
 import { resolveVirtualEdgeParent } from '@/utils/virtualEdgeParent'
 import { generateMarkdownTable } from '@/utils/exportMarkdown'
+import { copyToClipboard } from '@/utils/clipboard'
 import { ExportModal } from '@/components/modals/ExportModal'
 import { exportCanvasToYaml, downloadYaml } from '@/utils/exportYaml'
 import { parseYamlToCanvas } from '@/utils/importYaml'
@@ -445,26 +446,10 @@ export default function App() {
   const handleExportMd = useCallback(async () => {
     const md = generateMarkdownTable(nodes)
     if (!md) { toast.error('No nodes to export'); return }
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(md)
+    if (await copyToClipboard(md)) {
       toast.success('Markdown table copied to clipboard')
     } else {
-      // Only allowed access to navigator.clipboard over HTTPS not HTTP
-      // Use the temporary 'hidden text area for alternative copy method
-      const textArea = document.createElement("textarea");
-      textArea.value = md;
-      textArea.style.position = "absolute";
-      textArea.style.left = "-999999px";
-      document.body.prepend(textArea);
-      textArea.select();
-      try {
-        document.execCommand('copy');
-        toast.success("Markdown table copied to clipboard")
-      } catch (err) {
-        toast.error(`Markdown copy failed: ${err instanceof Error ? err.message : String(err)}`)
-      } finally {
-        textArea.remove();
-      }
+      toast.error('Markdown copy failed')
     }
   }, [nodes])
 
