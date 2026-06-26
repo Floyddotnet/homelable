@@ -6,10 +6,12 @@ import {
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { scanApi } from '@/api/client'
 import { useCanvasStore } from '@/stores/canvasStore'
+import { useDesignStore } from '@/stores/designStore'
 import { toast } from 'sonner'
 import { PendingDeviceModal, type PendingDevice } from '@/components/modals/PendingDeviceModal'
 import type { NodeType, ServiceInfo } from '@/types'
 import { buildZigbeeProperties, isZigbeeType } from '@/utils/zigbeeProperties'
+import { buildZwaveProperties, isZwaveType } from '@/utils/zwaveProperties'
 import { buildMacProperty } from '@/utils/macProperty'
 
 interface PendingDevicesModalProps {
@@ -67,11 +69,13 @@ const TYPE_ICONS: Record<string, React.ElementType> = {
   generic: Circle,
 }
 
-type SourceFilter = 'all' | 'ip' | 'zigbee'
+type SourceFilter = 'all' | 'ip' | 'zigbee' | 'zwave'
 type StatusFilter = 'pending' | 'hidden'
 
-function inferSource(d: PendingDevice): 'zigbee' | 'ip' {
-  if (d.discovery_source === 'zigbee' || d.ieee_address) return 'zigbee'
+function inferSource(d: PendingDevice): 'zigbee' | 'zwave' | 'ip' {
+  if (d.discovery_source === 'zwave') return 'zwave'
+  if (d.discovery_source === 'zigbee') return 'zigbee'
+  if (d.ieee_address) return 'zigbee'
   return 'ip'
 }
 
@@ -124,6 +128,7 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
   // Optionally restrict to devices that have at least one detected service.
   const [withServicesOnly, setWithServicesOnly] = useState(false)
   const { addNode, scanEventTs } = useCanvasStore()
+  const activeDesignId = useDesignStore((s) => s.activeDesignId)
   const highlightRef = useRef<HTMLButtonElement>(null)
 
   const load = useCallback(async () => {
@@ -264,17 +269,24 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
     try {
       const fallbackLabel = deviceLabel(device)
       const type = (device.suggested_type ?? 'generic') as NodeType
-      const zigbee = isZigbeeType(type)
-      const properties = zigbee ? buildZigbeeProperties(device) : buildMacProperty(device.mac)
+      const zwave = isZwaveType(type)
+      const wireless = isZigbeeType(type) || zwave
+      const properties = zwave
+        ? buildZwaveProperties(device)
+        : isZigbeeType(type)
+          ? buildZigbeeProperties(device)
+          : buildMacProperty(device.mac)
       const nodeData = {
         label: fallbackLabel,
         type,
         ip: device.ip ?? undefined,
         mac: device.mac ?? undefined,
         hostname: device.hostname ?? undefined,
-        status: zigbee ? 'online' : 'unknown',
+        status: wireless ? 'online' : 'unknown',
         services: (device.services ?? []) as ServiceInfo[],
         properties,
+        // Approve onto the design the user is viewing, not the first design.
+        design_id: activeDesignId ?? undefined,
       }
       const res = await scanApi.approve(device.id, nodeData)
       const nodeId = res.data.node_id
@@ -282,7 +294,7 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
         id: nodeId,
         type: nodeData.type,
         position: { x: 400, y: 300 },
-        data: { ...nodeData, status: zigbee ? ('online' as const) : ('unknown' as const) },
+        data: { ...nodeData, status: wireless ? ('online' as const) : ('unknown' as const) },
       })
       injectAutoEdges(res.data.edges)
       const extra = res.data.edges_created > 0 ? ` (+${res.data.edges_created} link${res.data.edges_created !== 1 ? 's' : ''})` : ''
@@ -319,7 +331,7 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
     const ids = [...selectedIds]
     if (ids.length === 0) return
     try {
-      const res = await scanApi.bulkApprove(ids)
+      const res = await scanApi.bulkApprove(ids, activeDesignId)
       const deviceToNode: Record<string, string> = {}
       res.data.device_ids.forEach((did, i) => { deviceToNode[did] = res.data.node_ids[i] })
       const approvedDevices = devices.filter((d) => ids.includes(d.id))
@@ -327,7 +339,8 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
         const nodeId = deviceToNode[d.id]
         if (!nodeId) return
         const type = (d.suggested_type ?? 'generic') as NodeType
-        const zigbee = isZigbeeType(type)
+        const zwave = isZwaveType(type)
+        const wireless = isZigbeeType(type) || zwave
         addNode({
           id: nodeId,
           type,
@@ -338,9 +351,13 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
             ip: d.ip ?? undefined,
             mac: d.mac ?? undefined,
             hostname: d.hostname ?? undefined,
-            status: zigbee ? ('online' as const) : ('unknown' as const),
+            status: wireless ? ('online' as const) : ('unknown' as const),
             services: (d.services ?? []) as ServiceInfo[],
-            properties: zigbee ? buildZigbeeProperties(d) : buildMacProperty(d.mac),
+            properties: zwave
+              ? buildZwaveProperties(d)
+              : isZigbeeType(type)
+                ? buildZigbeeProperties(d)
+                : buildMacProperty(d.mac),
           },
         })
       })
@@ -472,6 +489,12 @@ export function PendingDevicesModal({ open, onClose, highlightId, initialStatus 
                 className={`px-2.5 py-1.5 transition-colors border-l border-border ${sourceFilter === 'zigbee' ? 'bg-[#00d4ff]/20 text-[#00d4ff]' : 'bg-[#0d1117] text-muted-foreground hover:text-foreground'}`}
               >
                 Zigbee
+              </button>
+              <button
+                onClick={() => setSourceFilter('zwave')}
+                className={`px-2.5 py-1.5 transition-colors border-l border-border ${sourceFilter === 'zwave' ? 'bg-[#ff6e00]/20 text-[#ff6e00]' : 'bg-[#0d1117] text-muted-foreground hover:text-foreground'}`}
+              >
+                Z-Wave
               </button>
             </div>
             <select
@@ -631,8 +654,11 @@ function DeviceCard({ device, selected, selectMode, highlighted, onClick, cardRe
   const source = inferSource(device)
   const Icon = TYPE_ICONS[device.suggested_type ?? 'generic'] ?? Circle
   const label = deviceLabel(device)
-  const sourceColor = source === 'zigbee' ? '#00d4ff' : '#a855f7'
-  const sourceLabel = source === 'zigbee' ? 'ZIGBEE' : (device.discovery_source ?? 'IP').toUpperCase()
+  const sourceColor = source === 'zigbee' ? '#00d4ff' : source === 'zwave' ? '#ff6e00' : '#a855f7'
+  const sourceLabel =
+    source === 'zigbee' ? 'ZIGBEE'
+    : source === 'zwave' ? 'Z-WAVE'
+    : (device.discovery_source ?? 'IP').toUpperCase()
   const services = device.services ?? []
   const visibleServices = services.slice(0, 4)
   const moreServices = services.length - visibleServices.length
