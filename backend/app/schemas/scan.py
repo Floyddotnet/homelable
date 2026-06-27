@@ -24,6 +24,13 @@ class PendingDeviceResponse(BaseModel):
     # Number of distinct canvases (designs) this device already appears on,
     # correlated by ip / ieee_address against existing nodes. Computed per-request.
     canvas_count: int = 0
+    # Timestamps from the linked canvas node(s), correlated by ip / ieee_address.
+    # Null when the device is not on any canvas yet. Aggregated across matches:
+    # created_at = oldest; last_scan / last_modified / last_seen = newest.
+    node_created_at: datetime | None = None
+    node_last_scan: datetime | None = None
+    node_last_modified: datetime | None = None
+    node_last_seen: datetime | None = None
 
     model_config = {"from_attributes": True}
 

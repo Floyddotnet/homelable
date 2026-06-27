@@ -8,17 +8,11 @@ import { NODE_TYPE_LABELS, STATUS_COLORS, type ServiceInfo, type ServiceStatus, 
 import { getServiceUrl } from '@/utils/serviceUrl'
 import { splitIps } from '@/utils/maskIp'
 import { PROPERTY_ICONS, PROPERTY_ICON_NAMES, resolvePropertyIcon } from '@/utils/propertyIcons'
+import { formatTimestamp } from '@/utils/timeFormat'
 import type { Node } from '@xyflow/react'
 
 interface DetailPanelProps {
   onEdit: (id: string) => void
-}
-
-// Backend timestamps may arrive without a timezone suffix (naive UTC). Append
-// 'Z' when absent so the browser parses them as UTC rather than local time.
-function formatTimestamp(value: string): string {
-  const iso = /[Zz]|[+-]\d{2}:?\d{2}$/.test(value) ? value : value + 'Z'
-  return new Date(iso).toLocaleString()
 }
 
 type SvcForm = { port: string; protocol: 'tcp' | 'udp'; service_name: string; path: string }

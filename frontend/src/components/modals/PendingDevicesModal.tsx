@@ -13,6 +13,7 @@ import type { NodeType, ServiceInfo } from '@/types'
 import { buildZigbeeProperties, isZigbeeType } from '@/utils/zigbeeProperties'
 import { buildZwaveProperties, isZwaveType } from '@/utils/zwaveProperties'
 import { buildMacProperty } from '@/utils/macProperty'
+import { formatRelative, formatTimestamp } from '@/utils/timeFormat'
 
 interface PendingDevicesModalProps {
   open: boolean
@@ -663,6 +664,22 @@ function DeviceCard({ device, selected, selectMode, highlighted, onClick, cardRe
   const visibleServices = services.slice(0, 4)
   const moreServices = services.length - visibleServices.length
 
+  // Timestamps: a device placed on a canvas shows its linked node's lifecycle
+  // (created / last scan / last modified / last seen). A device that is only in
+  // the discovery inventory has no node yet, so it falls back to when the
+  // scanner first saw it.
+  const onCanvas = (device.canvas_count ?? 0) > 0
+  const timestamps: { label: string; iso: string }[] = []
+  if (onCanvas) {
+    if (device.node_created_at) timestamps.push({ label: 'Created', iso: device.node_created_at })
+    if (device.node_last_scan) timestamps.push({ label: 'Scan', iso: device.node_last_scan })
+    if (device.node_last_modified) timestamps.push({ label: 'Modified', iso: device.node_last_modified })
+    if (device.node_last_seen) timestamps.push({ label: 'Seen', iso: device.node_last_seen })
+  }
+  if (timestamps.length === 0) {
+    timestamps.push({ label: 'Discovered', iso: device.discovered_at })
+  }
+
   const borderClass = highlighted
     ? 'border-[#e3b341] bg-[#2d3748]'
     : selected
@@ -759,6 +776,14 @@ function DeviceCard({ device, selected, selectMode, highlighted, onClick, cardRe
           )}
         </div>
       )}
+
+      {/* Timestamps — compact relative times, full date on hover. Kept tiny so
+          the tile footprint stays the same as before. */}
+      <div className="mt-2 pt-2 border-t border-border/50 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
+        {timestamps.map((t) => (
+          <TimeLine key={t.label} label={t.label} iso={t.iso} />
+        ))}
+      </div>
     </button>
   )
 }
@@ -768,6 +793,15 @@ function InfoLine({ label, value }: { label: string; value: string }) {
     <div className="flex items-baseline gap-1.5 min-w-0">
       <span className="text-muted-foreground shrink-0 w-12">{label}</span>
       <span className="font-mono text-foreground truncate">{value}</span>
+    </div>
+  )
+}
+
+function TimeLine({ label, iso }: { label: string; iso: string }) {
+  return (
+    <div className="flex items-baseline gap-1 min-w-0" title={formatTimestamp(iso)}>
+      <span className="text-muted-foreground shrink-0">{label}</span>
+      <span className="font-mono text-foreground/80 truncate">{formatRelative(iso)}</span>
     </div>
   )
 }

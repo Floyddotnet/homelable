@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { PendingDevicesModal } from '../PendingDevicesModal'
 import { useCanvasStore } from '@/stores/canvasStore'
 
@@ -363,5 +363,38 @@ describe('PendingDevicesModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /Hide on-canvas/ }))
     expect(screen.queryByTestId('pending-card-dev-b')).not.toBeInTheDocument()
     expect(screen.getByTestId('pending-card-dev-a')).toBeInTheDocument()
+  })
+
+  describe('tile timestamps', () => {
+    it('shows the linked node lifecycle timestamps for on-canvas devices', async () => {
+      mockPending.mockResolvedValue({
+        data: [{
+          ...DEVICE_IP,
+          canvas_count: 1,
+          node_created_at: '2026-01-02T10:00:00Z',
+          node_last_scan: '2026-06-01T08:30:00Z',
+          node_last_modified: '2026-06-20T12:00:00Z',
+          node_last_seen: '2026-06-25T09:15:00Z',
+        }],
+      })
+      render(<PendingDevicesModal {...baseProps} />)
+      const card = await screen.findByTestId('pending-card-dev-a')
+      const inCard = within(card)
+      expect(inCard.getByText('Created')).toBeInTheDocument()
+      expect(inCard.getByText('Scan')).toBeInTheDocument()
+      expect(inCard.getByText('Modified')).toBeInTheDocument()
+      expect(inCard.getByText('Seen')).toBeInTheDocument()
+      // Discovered fallback is not shown once node timestamps are present.
+      expect(inCard.queryByText('Discovered')).not.toBeInTheDocument()
+    })
+
+    it('falls back to Discovered for devices not on any canvas', async () => {
+      mockPending.mockResolvedValue({ data: [DEVICE_IP] })
+      render(<PendingDevicesModal {...baseProps} />)
+      const card = await screen.findByTestId('pending-card-dev-a')
+      const inCard = within(card)
+      expect(inCard.getByText('Discovered')).toBeInTheDocument()
+      expect(inCard.queryByText('Created')).not.toBeInTheDocument()
+    })
   })
 })

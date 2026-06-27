@@ -1,5 +1,6 @@
 """Tests for scan routes: trigger, pending devices, approve/hide/ignore, stop."""
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -227,6 +228,56 @@ async def test_canvas_count_ignores_nodes_without_design(client, headers, db_ses
 
     res = await client.get("/api/v1/scan/pending", headers=headers)
     assert res.json()[0]["canvas_count"] == 0
+
+
+# --- Linked-node timestamps on the inventory response ---
+
+@pytest.mark.asyncio
+async def test_pending_device_without_node_has_null_node_timestamps(client, headers, pending_device):
+    # No matching canvas node → node_* timestamps are all null; the device still
+    # carries its own discovered_at for the "Discovered" fallback on the tile.
+    data = (await client.get("/api/v1/scan/pending", headers=headers)).json()[0]
+    assert data["discovered_at"] is not None
+    assert data["node_created_at"] is None
+    assert data["node_last_scan"] is None
+    assert data["node_last_modified"] is None
+    assert data["node_last_seen"] is None
+
+
+@pytest.mark.asyncio
+async def test_pending_device_exposes_linked_node_timestamps(client, headers, db_session, pending_device):
+    d1 = await _add_design(db_session, "Home")
+    node = _node(d1, ip="192.168.1.100")
+    node.last_scan = datetime(2026, 6, 1, 8, 30, tzinfo=timezone.utc)
+    node.last_seen = datetime(2026, 6, 25, 9, 15, tzinfo=timezone.utc)
+    db_session.add(node)
+    await db_session.commit()
+
+    data = (await client.get("/api/v1/scan/pending", headers=headers)).json()[0]
+    assert data["node_created_at"] is not None      # defaulted on insert
+    assert data["node_last_modified"] is not None    # updated_at defaulted on insert
+    assert data["node_last_scan"].startswith("2026-06-01")
+    assert data["node_last_seen"].startswith("2026-06-25")
+
+
+@pytest.mark.asyncio
+async def test_node_timestamps_aggregate_across_matches(client, headers, db_session, pending_device):
+    # Two canvas nodes share the device IP: created_at takes the OLDEST,
+    # last_scan takes the NEWEST.
+    d1 = await _add_design(db_session, "Home")
+    d2 = await _add_design(db_session, "Lab")
+    older = _node(d1, ip="192.168.1.100")
+    older.created_at = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+    older.last_scan = datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc)
+    newer = _node(d2, ip="192.168.1.100")
+    newer.created_at = datetime(2026, 5, 1, 0, 0, tzinfo=timezone.utc)
+    newer.last_scan = datetime(2026, 6, 1, 0, 0, tzinfo=timezone.utc)
+    db_session.add_all([older, newer])
+    await db_session.commit()
+
+    data = (await client.get("/api/v1/scan/pending", headers=headers)).json()[0]
+    assert data["node_created_at"].startswith("2026-01-01")  # oldest
+    assert data["node_last_scan"].startswith("2026-06-01")   # newest
 
 
 # --- Approve device ---
