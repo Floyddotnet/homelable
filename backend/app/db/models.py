@@ -61,6 +61,7 @@ class Node(Base):
     bottom_handles: Mapped[int] = mapped_column(Integer, default=1)
     ieee_address: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_scan: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     response_time_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
@@ -99,6 +100,9 @@ class CanvasState(Base):
 
 class PendingDevice(Base):
     __tablename__ = "pending_devices"
+    # Permit the plain (non-Mapped[]) annotations on the transient request-only
+    # attributes below; without this SQLAlchemy 2.0 tries to map them as columns.
+    __allow_unmapped__ = True
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     ip: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -120,6 +124,12 @@ class PendingDevice(Base):
     # Transient (not persisted): populated per-request by the scan routes to report
     # how many canvases this device already appears on. Not a mapped column.
     canvas_count: int = 0
+    # Transient (not persisted): timestamps from the linked canvas node(s),
+    # correlated by ip / ieee_address. None when the device is not on any canvas.
+    node_created_at: datetime | None = None
+    node_last_scan: datetime | None = None
+    node_last_modified: datetime | None = None
+    node_last_seen: datetime | None = None
 
 
 class PendingDeviceLink(Base):

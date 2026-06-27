@@ -1,5 +1,6 @@
 """Tests for scan routes: trigger, pending devices, approve/hide/ignore, stop."""
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -227,6 +228,56 @@ async def test_canvas_count_ignores_nodes_without_design(client, headers, db_ses
 
     res = await client.get("/api/v1/scan/pending", headers=headers)
     assert res.json()[0]["canvas_count"] == 0
+
+
+# --- Linked-node timestamps on the inventory response ---
+
+@pytest.mark.asyncio
+async def test_pending_device_without_node_has_null_node_timestamps(client, headers, pending_device):
+    # No matching canvas node → node_* timestamps are all null; the device still
+    # carries its own discovered_at for the "Discovered" fallback on the tile.
+    data = (await client.get("/api/v1/scan/pending", headers=headers)).json()[0]
+    assert data["discovered_at"] is not None
+    assert data["node_created_at"] is None
+    assert data["node_last_scan"] is None
+    assert data["node_last_modified"] is None
+    assert data["node_last_seen"] is None
+
+
+@pytest.mark.asyncio
+async def test_pending_device_exposes_linked_node_timestamps(client, headers, db_session, pending_device):
+    d1 = await _add_design(db_session, "Home")
+    node = _node(d1, ip="192.168.1.100")
+    node.last_scan = datetime(2026, 6, 1, 8, 30, tzinfo=timezone.utc)
+    node.last_seen = datetime(2026, 6, 25, 9, 15, tzinfo=timezone.utc)
+    db_session.add(node)
+    await db_session.commit()
+
+    data = (await client.get("/api/v1/scan/pending", headers=headers)).json()[0]
+    assert data["node_created_at"] is not None      # defaulted on insert
+    assert data["node_last_modified"] is not None    # updated_at defaulted on insert
+    assert data["node_last_scan"].startswith("2026-06-01")
+    assert data["node_last_seen"].startswith("2026-06-25")
+
+
+@pytest.mark.asyncio
+async def test_node_timestamps_aggregate_across_matches(client, headers, db_session, pending_device):
+    # Two canvas nodes share the device IP: created_at takes the OLDEST,
+    # last_scan takes the NEWEST.
+    d1 = await _add_design(db_session, "Home")
+    d2 = await _add_design(db_session, "Lab")
+    older = _node(d1, ip="192.168.1.100")
+    older.created_at = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+    older.last_scan = datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc)
+    newer = _node(d2, ip="192.168.1.100")
+    newer.created_at = datetime(2026, 5, 1, 0, 0, tzinfo=timezone.utc)
+    newer.last_scan = datetime(2026, 6, 1, 0, 0, tzinfo=timezone.utc)
+    db_session.add_all([older, newer])
+    await db_session.commit()
+
+    data = (await client.get("/api/v1/scan/pending", headers=headers)).json()[0]
+    assert data["node_created_at"].startswith("2026-01-01")  # oldest
+    assert data["node_last_scan"].startswith("2026-06-01")   # newest
 
 
 # --- Approve device ---
@@ -739,6 +790,75 @@ async def test_bulk_approve_approves_devices(client: AsyncClient, headers, two_p
     inventory = pending_res.json()
     assert len(inventory) == 2
     assert all(d["status"] == "approved" for d in inventory)
+
+
+@pytest.mark.asyncio
+async def test_bulk_approve_places_already_approved_device_on_another_design(
+    client: AsyncClient, headers, db_session, two_pending_devices
+):
+    """Regression: a device already approved (status='approved', e.g. placed on
+    another canvas) must still get a node on the design being approved onto.
+
+    Previously bulk-approve filtered status=='pending', so selecting an
+    already-approved device created no node — the user saw fewer nodes than
+    they selected."""
+    ids = [d.id for d in two_pending_devices]
+    design_a = await _add_design(db_session, "Canvas A")
+    design_b = await _add_design(db_session, "Canvas B")
+
+    # Approve both onto design A.
+    res_a = await client.post(
+        "/api/v1/scan/pending/bulk-approve",
+        json={"device_ids": ids, "design_id": design_a},
+        headers=headers,
+    )
+    assert res_a.json()["approved"] == 2
+
+    # Re-approve the same (now status='approved') devices onto design B.
+    res_b = await client.post(
+        "/api/v1/scan/pending/bulk-approve",
+        json={"device_ids": ids, "design_id": design_b},
+        headers=headers,
+    )
+    data_b = res_b.json()
+    assert data_b["approved"] == 2, "already-approved devices must place onto the new canvas"
+    assert data_b["skipped"] == 0
+
+    # Two nodes now exist on each design.
+    from app.db.models import Node as NodeModel
+    nodes_b = (
+        await db_session.execute(select(NodeModel).where(NodeModel.design_id == design_b))
+    ).scalars().all()
+    assert len(nodes_b) == 2
+
+
+@pytest.mark.asyncio
+async def test_bulk_approve_skips_device_already_on_target_design(
+    client: AsyncClient, headers, db_session, two_pending_devices
+):
+    """A device already on the target canvas (same ip) is not placed twice."""
+    ids = [d.id for d in two_pending_devices]
+    design = await _add_design(db_session, "Canvas")
+    # First device already sits on the canvas (matched by ip).
+    db_session.add(_node(design, ip="192.168.1.10"))
+    await db_session.commit()
+
+    res = await client.post(
+        "/api/v1/scan/pending/bulk-approve",
+        json={"device_ids": ids, "design_id": design},
+        headers=headers,
+    )
+    data = res.json()
+    assert data["approved"] == 1   # only the second device (192.168.1.11)
+    assert data["skipped"] == 1
+
+    from app.db.models import Node as NodeModel
+    nodes = (
+        await db_session.execute(select(NodeModel).where(NodeModel.design_id == design))
+    ).scalars().all()
+    # The pre-existing node plus the one newly approved — no duplicate for .10.
+    assert len(nodes) == 2
+    assert sorted(n.ip for n in nodes) == ["192.168.1.10", "192.168.1.11"]
 
 
 @pytest.fixture

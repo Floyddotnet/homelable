@@ -1,6 +1,7 @@
 import ipaddress
 import logging
 import uuid
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -193,51 +194,80 @@ async def stop_scan(
     return {"stopping": True}
 
 
-async def _canvas_counts(
-    db: AsyncSession, devices: list[PendingDevice]
-) -> dict[str, int]:
-    """Map each device id → number of distinct canvases (designs) it appears on.
+def _agg(values: list[datetime], *, newest: bool) -> datetime | None:
+    """Pick the newest (max) or oldest (min) of a list of timestamps, or None."""
+    present = [v for v in values if v is not None]
+    if not present:
+        return None
+    return max(present) if newest else min(present)
 
-    Correlates a scanned device to existing nodes by ``ieee_address`` (exact) or
-    ``ip`` (exact). Runs a single node query and groups in Python — node counts are
-    small for a homelab, so this avoids an N+1 per device.
+
+async def _canvas_correlation(
+    db: AsyncSession, devices: list[PendingDevice]
+) -> dict[str, dict[str, Any]]:
+    """Correlate each device to existing canvas nodes by ``ieee_address`` or ``ip``.
+
+    Returns, per device id: the number of distinct canvases (designs) it appears
+    on, plus aggregated timestamps from every matching node — created_at (oldest),
+    last_scan / updated_at / last_seen (newest). One node query, grouped in Python
+    (node counts are small for a homelab), so no N+1 per device.
     """
     if not devices:
         return {}
     rows = (
         await db.execute(
-            select(Node.ip, Node.ieee_address, Node.design_id).where(
-                Node.design_id.isnot(None)
-            )
+            select(
+                Node.ip,
+                Node.ieee_address,
+                Node.design_id,
+                Node.created_at,
+                Node.last_scan,
+                Node.updated_at,
+                Node.last_seen,
+            ).where(Node.design_id.isnot(None))
         )
     ).all()
-    # ip → set(design_id), ieee → set(design_id)
-    by_ip: dict[str, set[str]] = {}
-    by_ieee: dict[str, set[str]] = {}
-    for ip, ieee, design_id in rows:
-        if ip:
-            by_ip.setdefault(ip, set()).add(design_id)
-        if ieee:
-            by_ieee.setdefault(ieee, set()).add(design_id)
+    # Index matching nodes by ip and by ieee so a device can look up both.
+    by_ip: dict[str, list[Any]] = {}
+    by_ieee: dict[str, list[Any]] = {}
+    for row in rows:
+        if row.ip:
+            by_ip.setdefault(row.ip, []).append(row)
+        if row.ieee_address:
+            by_ieee.setdefault(row.ieee_address, []).append(row)
 
-    counts: dict[str, int] = {}
+    info: dict[str, dict[str, Any]] = {}
     for d in devices:
-        designs: set[str] = set()
+        matched = []
         if d.ieee_address:
-            designs |= by_ieee.get(d.ieee_address, set())
+            matched += by_ieee.get(d.ieee_address, [])
         if d.ip:
-            designs |= by_ip.get(d.ip, set())
-        counts[d.id] = len(designs)
-    return counts
+            matched += by_ip.get(d.ip, [])
+        # De-duplicate nodes matched by both ip and ieee.
+        matched = list({id(m): m for m in matched}.values())
+        designs = {m.design_id for m in matched}
+        info[d.id] = {
+            "canvas_count": len(designs),
+            "node_created_at": _agg([m.created_at for m in matched], newest=False),
+            "node_last_scan": _agg([m.last_scan for m in matched], newest=True),
+            "node_last_modified": _agg([m.updated_at for m in matched], newest=True),
+            "node_last_seen": _agg([m.last_seen for m in matched], newest=True),
+        }
+    return info
 
 
 async def _with_canvas_counts(
     db: AsyncSession, devices: list[PendingDevice]
 ) -> list[PendingDevice]:
-    """Attach a transient ``canvas_count`` to each device for the response schema."""
-    counts = await _canvas_counts(db, devices)
+    """Attach transient canvas count + linked-node timestamps for the response."""
+    info = await _canvas_correlation(db, devices)
     for d in devices:
-        d.canvas_count = counts.get(d.id, 0)
+        meta = info.get(d.id, {})
+        d.canvas_count = meta.get("canvas_count", 0)
+        d.node_created_at = meta.get("node_created_at")
+        d.node_last_scan = meta.get("node_last_scan")
+        d.node_last_modified = meta.get("node_last_modified")
+        d.node_last_seen = meta.get("node_last_seen")
     return devices
 
 
@@ -278,15 +308,38 @@ async def bulk_approve_devices(
         first_design = (await db.execute(select(Design).order_by(Design.created_at).limit(1))).scalar()
         default_design_id = first_design.id if first_design else None
 
+    # Accept every selected device that isn't user-hidden. We intentionally do NOT
+    # filter on status == "pending": a device's status is global, but canvas
+    # membership is per-design. A device approved onto another canvas (or whose
+    # node was later deleted) must still be placeable on THIS design. Duplicates
+    # are guarded per-design below, not by the global status flag.
     result = await db.execute(
         select(PendingDevice).where(
             PendingDevice.id.in_(payload.device_ids),
-            PendingDevice.status == "pending",
+            PendingDevice.status != "hidden",
         )
     )
     devices = result.scalars().all()
+
+    # What already sits on the target canvas, so we skip devices already placed
+    # here (by ip or ieee_address) instead of creating duplicate nodes.
+    existing = (
+        await db.execute(
+            select(Node.ip, Node.ieee_address).where(Node.design_id == default_design_id)
+        )
+    ).all()
+    placed_ips = {ip for ip, _ in existing if ip}
+    placed_ieee = {ieee for _, ieee in existing if ieee}
+
     created_nodes: list[Node] = []
+    approved_devices: list[PendingDevice] = []
     for device in devices:
+        already_here = (
+            (device.ip is not None and device.ip in placed_ips)
+            or (device.ieee_address is not None and device.ieee_address in placed_ieee)
+        )
+        if already_here:
+            continue
         device.status = "approved"
         node_type = device.suggested_type or "generic"
         is_wireless = _is_wireless(node_type)
@@ -309,12 +362,20 @@ async def bulk_approve_devices(
         )
         db.add(node)
         created_nodes.append(node)
+        approved_devices.append(device)
+        # Track within this batch so a duplicate selection (same ip/ieee) is not
+        # placed twice on the same canvas.
+        if device.ip:
+            placed_ips.add(device.ip)
+        if device.ieee_address:
+            placed_ieee.add(device.ieee_address)
     await db.flush()  # populates node.id from Python-side default before reading
+    # node_ids and approved_device_ids stay index-aligned for the client's mapping.
     node_ids = [n.id for n in created_nodes]
-    approved_device_ids = [d.id for d in devices]
+    approved_device_ids = [d.id for d in approved_devices]
 
     all_edges: list[dict[str, str]] = []
-    for device in devices:
+    for device in approved_devices:
         all_edges.extend(await _resolve_pending_links_for_ieee(db, device.ieee_address))
 
     await db.commit()
