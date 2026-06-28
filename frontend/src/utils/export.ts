@@ -2,6 +2,7 @@ import { toPng, toSvg } from 'html-to-image'
 
 export type ExportQuality = 'standard' | 'high' | 'ultra'
 export type ExportFormat = 'png' | 'svg'
+export type ExportBackground = 'dark' | 'white'
 
 export const EXPORT_QUALITY_OPTIONS: { value: ExportQuality; label: string; pixelRatio: number; hint: string }[] = [
   { value: 'standard', label: 'Standard', pixelRatio: 1, hint: '1× — small file' },
@@ -9,10 +10,23 @@ export const EXPORT_QUALITY_OPTIONS: { value: ExportQuality; label: string; pixe
   { value: 'ultra',    label: 'Ultra',    pixelRatio: 4, hint: '4× — print quality, large file' },
 ]
 
-export async function exportToPng(element: HTMLElement, quality: ExportQuality = 'high'): Promise<void> {
+export const EXPORT_BACKGROUND_OPTIONS: { value: ExportBackground; label: string; color: string; hint: string }[] = [
+  { value: 'dark',  label: 'Dark',  color: '#0d1117', hint: 'screen / docs' },
+  { value: 'white', label: 'White', color: '#ffffff', hint: 'printing' },
+]
+
+function backgroundColor(background: ExportBackground): string {
+  return (EXPORT_BACKGROUND_OPTIONS.find((o) => o.value === background) ?? EXPORT_BACKGROUND_OPTIONS[0]).color
+}
+
+export async function exportToPng(
+  element: HTMLElement,
+  quality: ExportQuality = 'high',
+  background: ExportBackground = 'dark',
+): Promise<void> {
   const option = EXPORT_QUALITY_OPTIONS.find((o) => o.value === quality) ?? EXPORT_QUALITY_OPTIONS[1]
   const dataUrl = await toPng(element, {
-    backgroundColor: '#0d1117',
+    backgroundColor: backgroundColor(background),
     pixelRatio: option.pixelRatio,
     style: {
       '--xy-controls-display': 'none',
@@ -22,9 +36,12 @@ export async function exportToPng(element: HTMLElement, quality: ExportQuality =
   triggerDownload(dataUrl, 'homelable-canvas.png')
 }
 
-export async function exportToSvg(element: HTMLElement): Promise<void> {
+export async function exportToSvg(
+  element: HTMLElement,
+  background: ExportBackground = 'dark',
+): Promise<void> {
   const dataUrl = await toSvg(element, {
-    backgroundColor: '#0d1117',
+    backgroundColor: backgroundColor(background),
     style: {
       '--xy-controls-display': 'none',
     } as Partial<CSSStyleDeclaration>,
@@ -37,5 +54,8 @@ function triggerDownload(dataUrl: string, filename: string): void {
   const link = document.createElement('a')
   link.download = filename
   link.href = dataUrl
+  // Firefox only triggers a programmatic click when the anchor is in the DOM.
+  document.body.appendChild(link)
   link.click()
+  document.body.removeChild(link)
 }
