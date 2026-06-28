@@ -19,6 +19,24 @@ function backgroundColor(background: ExportBackground): string {
   return (EXPORT_BACKGROUND_OPTIONS.find((o) => o.value === background) ?? EXPORT_BACKGROUND_OPTIONS[0]).color
 }
 
+// The `.react-flow` element paints its own opaque background (colorMode dark),
+// and html-to-image's `backgroundColor` option only shows through transparent
+// areas. Force the chosen colour directly on the live element for the duration
+// of the capture, then restore whatever was there before.
+async function withBackground<T>(
+  element: HTMLElement,
+  color: string,
+  capture: () => Promise<T>,
+): Promise<T> {
+  const previous = element.style.backgroundColor
+  element.style.backgroundColor = color
+  try {
+    return await capture()
+  } finally {
+    element.style.backgroundColor = previous
+  }
+}
+
 export async function exportToPng(
   element: HTMLElement,
   quality: ExportQuality = 'high',
@@ -26,16 +44,12 @@ export async function exportToPng(
 ): Promise<void> {
   const option = EXPORT_QUALITY_OPTIONS.find((o) => o.value === quality) ?? EXPORT_QUALITY_OPTIONS[1]
   const color = backgroundColor(background)
-  const dataUrl = await toPng(element, {
-    backgroundColor: color,
-    pixelRatio: option.pixelRatio,
-    style: {
-      '--xy-controls-display': 'none',
-      // The .react-flow root paints its own opaque background (colorMode),
-      // which would hide the canvas backgroundColor above — override it inline.
+  const dataUrl = await withBackground(element, color, () =>
+    toPng(element, {
       backgroundColor: color,
-    } as Partial<CSSStyleDeclaration>,
-  })
+      pixelRatio: option.pixelRatio,
+    }),
+  )
 
   triggerDownload(dataUrl, 'homelable-canvas.png')
 }
@@ -45,13 +59,11 @@ export async function exportToSvg(
   background: ExportBackground = 'dark',
 ): Promise<void> {
   const color = backgroundColor(background)
-  const dataUrl = await toSvg(element, {
-    backgroundColor: color,
-    style: {
-      '--xy-controls-display': 'none',
+  const dataUrl = await withBackground(element, color, () =>
+    toSvg(element, {
       backgroundColor: color,
-    } as Partial<CSSStyleDeclaration>,
-  })
+    }),
+  )
 
   triggerDownload(dataUrl, 'homelable-canvas.svg')
 }

@@ -68,12 +68,18 @@ describe('exportToPng', () => {
     expect(mockToPng).toHaveBeenCalledWith(el, expect.objectContaining({ backgroundColor: '#ffffff' }))
   })
 
-  it('overrides the react-flow root background via inline style so white is visible', async () => {
+  it('forces the element background to white during capture, then restores it', async () => {
+    el.style.backgroundColor = 'rgb(13, 17, 23)'
+    let bgDuringCapture = ''
+    mockToPng.mockImplementation(() => {
+      bgDuringCapture = el.style.backgroundColor
+      return Promise.resolve('data:image/png;base64,abc')
+    })
     await exportToPng(el, 'standard', 'white')
-    expect(mockToPng).toHaveBeenCalledWith(
-      el,
-      expect.objectContaining({ style: expect.objectContaining({ backgroundColor: '#ffffff' }) }),
-    )
+    // the live element is painted white only for the duration of the capture
+    expect(bgDuringCapture).toBe('rgb(255, 255, 255)')
+    // and is restored afterwards so the on-screen canvas is untouched
+    expect(el.style.backgroundColor).toBe('rgb(13, 17, 23)')
   })
 
   it('attaches the download anchor to the DOM so Firefox triggers the download', async () => {
@@ -117,12 +123,16 @@ describe('exportToSvg', () => {
     expect(mockToSvg).toHaveBeenCalledWith(el, expect.objectContaining({ backgroundColor: '#ffffff' }))
   })
 
-  it('overrides the react-flow root background via inline style so white is visible', async () => {
+  it('forces the element background to white during capture, then restores it', async () => {
+    el.style.backgroundColor = 'rgb(13, 17, 23)'
+    let bgDuringCapture = ''
+    mockToSvg.mockImplementation(() => {
+      bgDuringCapture = el.style.backgroundColor
+      return Promise.resolve('data:image/svg+xml;base64,abc')
+    })
     await exportToSvg(el, 'white')
-    expect(mockToSvg).toHaveBeenCalledWith(
-      el,
-      expect.objectContaining({ style: expect.objectContaining({ backgroundColor: '#ffffff' }) }),
-    )
+    expect(bgDuringCapture).toBe('rgb(255, 255, 255)')
+    expect(el.style.backgroundColor).toBe('rgb(13, 17, 23)')
   })
 
   it('triggers a download', async () => {
