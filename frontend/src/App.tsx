@@ -498,7 +498,10 @@ export default function App() {
   // Otherwise fetch the configured live view key and build /view?key=...&design=<id>.
   const handleViewOnly = useCallback(async () => {
     if (STANDALONE) {
-      window.open('/view', '_blank', 'noopener,noreferrer')
+      // Standalone reads canvas from localStorage; pass the active design id so
+      // the read-only tab renders the same canvas the user is viewing.
+      const url = activeDesignId ? `/view?design=${encodeURIComponent(activeDesignId)}` : '/view'
+      window.open(url, '_blank', 'noopener,noreferrer')
       return
     }
     try {
@@ -933,9 +936,9 @@ export default function App() {
           onCancel={() => setPendingContainerAdd(null)}
         />
 
-        {!STANDALONE && (
-          <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-        )}
+        {/* Mounted in standalone too: status-check settings are hidden inside,
+            but canvas prefs (snap, hide-IP) still apply. */}
+        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
         <PendingDevicesModal
           open={pendingModalOpen}
