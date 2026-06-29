@@ -202,8 +202,8 @@ export function Sidebar({ onAddNode, onAddGroupRect, onAddText, onScan, onZigbee
 
       {!collapsed && <div className="flex-1" />}
 
-      {/* Stats footer */}
-      {!collapsed && (
+      {/* Stats footer — hidden in standalone (no scan / live status to count) */}
+      {!collapsed && !STANDALONE && (
         <div className="px-3 py-2 border-t border-border text-xs text-muted-foreground space-y-0.5">
           <div className="flex justify-between">
             <span>Total</span>
