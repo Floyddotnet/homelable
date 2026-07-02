@@ -93,7 +93,7 @@ export default function App() {
       const saveDesignId = designIdOverride ?? activeDesignId
       if (STANDALONE) {
         if (!saveDesignId) return false
-        standaloneStorage.saveCanvas(saveDesignId, { nodes, edges, theme_id: activeTheme, custom_style: customStyle, floorMap })
+        standaloneStorage.saveCanvas(saveDesignId, { nodes, edges, theme_id: activeTheme, custom_style: customStyle, floorMap: floorMap ?? undefined })
         markSaved()
         toast.success('Canvas saved')
         return true
