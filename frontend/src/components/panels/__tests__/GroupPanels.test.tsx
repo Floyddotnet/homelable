@@ -34,7 +34,6 @@ function makeGroupNode(id = 'g1', label = 'My Group', showBorder = true) {
 
 const mockStore = {
   nodes: [],
-  edges: [],
   selectedNodeId: null,
   selectedNodeIds: [],
   setSelectedNode: vi.fn(),
@@ -44,7 +43,6 @@ const mockStore = {
   createGroup: vi.fn(),
   ungroup: vi.fn(),
   removeFromGroup: vi.fn(),
-  setHighlightedPath: vi.fn(),
 }
 
 function setupStore(overrides = {}) {

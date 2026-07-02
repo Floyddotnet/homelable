@@ -38,8 +38,6 @@ interface CanvasState {
   floorMap: FloorMapConfig | null
   setFloorMap: (config: FloorMapConfig | null) => void
   updateFloorMap: (patch: Partial<FloorMapConfig>) => void
-  highlightedPath: string[]
-  setHighlightedPath: (edgeIds: string[]) => void
 
   // History
   past: HistoryEntry[]
@@ -105,7 +103,6 @@ export const useCanvasStore = create<CanvasState>((set) => ({
   scanEventTs: 0,
   serviceStatuses: {},
   floorMap: null,
-  highlightedPath: [],
   fitViewPending: false,
 
   past: [],
@@ -762,8 +759,6 @@ export const useCanvasStore = create<CanvasState>((set) => ({
       floorMap: state.floorMap ? { ...state.floorMap, ...patch } : null,
       hasUnsavedChanges: true,
     })),
-
-  setHighlightedPath: (edgeIds) => set({ highlightedPath: edgeIds }),
 
   loadCanvas: (nodes, edges) => {
     // React Flow requires parents before children in the array

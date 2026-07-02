@@ -37,8 +37,6 @@ function setupStore(nodeData: Partial<NodeData> = {}, serviceStatuses: Record<st
     createGroup: vi.fn(),
     ungroup: vi.fn(),
     setNodeSize: vi.fn(),
-    setHighlightedPath: vi.fn(),
-    edges: [],
     serviceStatuses,
   }
   // Support both the bare destructure call and the selector-based call.
@@ -59,8 +57,6 @@ describe('DetailPanel', () => {
       snapshotHistory: vi.fn(),
       createGroup: vi.fn(),
       ungroup: vi.fn(),
-      setHighlightedPath: vi.fn(),
-      edges: [],
     } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
   })
 
@@ -134,8 +130,6 @@ describe('DetailPanel', () => {
         snapshotHistory: vi.fn(),
         createGroup: vi.fn(),
         ungroup: vi.fn(),
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
 
       render(<DetailPanel onEdit={vi.fn()} />)
@@ -163,8 +157,6 @@ describe('DetailPanel', () => {
         snapshotHistory: vi.fn(),
         createGroup: vi.fn(),
         ungroup: vi.fn(),
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
 
       render(<DetailPanel onEdit={vi.fn()} />)
@@ -186,8 +178,6 @@ describe('DetailPanel', () => {
         snapshotHistory: vi.fn(),
         createGroup: vi.fn(),
         ungroup: vi.fn(),
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
 
       render(<DetailPanel onEdit={vi.fn()} />)
@@ -209,8 +199,6 @@ describe('DetailPanel', () => {
         snapshotHistory: vi.fn(),
         createGroup: vi.fn(),
         ungroup: vi.fn(),
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
 
       render(<DetailPanel onEdit={vi.fn()} />)
@@ -265,8 +253,6 @@ describe('DetailPanel', () => {
         deleteNode: vi.fn(),
         updateNode: vi.fn(),
         snapshotHistory: vi.fn(),
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
       render(<DetailPanel onEdit={vi.fn()} />)
       fireEvent.click(screen.getByLabelText('Close panel'))
@@ -291,8 +277,6 @@ describe('DetailPanel', () => {
         deleteNode,
         updateNode: vi.fn(),
         snapshotHistory,
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
       vi.spyOn(window, 'confirm').mockReturnValue(true)
       render(<DetailPanel onEdit={vi.fn()} />)
@@ -311,8 +295,6 @@ describe('DetailPanel', () => {
         deleteNode,
         updateNode: vi.fn(),
         snapshotHistory,
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
       vi.spyOn(window, 'confirm').mockReturnValue(false)
       render(<DetailPanel onEdit={vi.fn()} />)
@@ -344,8 +326,6 @@ describe('DetailPanel', () => {
         snapshotHistory: vi.fn(),
         createGroup: vi.fn(),
         ungroup: vi.fn(),
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
       render(<DetailPanel onEdit={vi.fn()} />)
       // Two "Add" header buttons: first = properties, second = services
@@ -371,8 +351,6 @@ describe('DetailPanel', () => {
         snapshotHistory: vi.fn(),
         createGroup: vi.fn(),
         ungroup: vi.fn(),
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
       render(<DetailPanel onEdit={vi.fn()} />)
       const addHeaders = screen.getAllByText('Add')
@@ -396,8 +374,6 @@ describe('DetailPanel', () => {
         deleteNode: vi.fn(),
         updateNode,
         snapshotHistory: vi.fn(),
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
       render(<DetailPanel onEdit={vi.fn()} />)
       fireEvent.click(screen.getByTitle('Remove service'))
@@ -413,8 +389,6 @@ describe('DetailPanel', () => {
         deleteNode: vi.fn(),
         updateNode: vi.fn(),
         snapshotHistory: vi.fn(),
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
       expect(() => render(<DetailPanel onEdit={vi.fn()} />)).not.toThrow()
     })
@@ -446,8 +420,6 @@ describe('DetailPanel', () => {
         deleteNode: vi.fn(),
         updateNode,
         snapshotHistory: vi.fn(),
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
 
       render(<DetailPanel onEdit={vi.fn()} />)
@@ -473,8 +445,6 @@ describe('DetailPanel', () => {
         deleteNode: vi.fn(),
         updateNode,
         snapshotHistory: vi.fn(),
-      setHighlightedPath: vi.fn(),
-      edges: [],
       } as unknown as ReturnType<typeof canvasStore.useCanvasStore>)
 
       render(<DetailPanel onEdit={vi.fn()} />)
@@ -638,7 +608,6 @@ describe('DetailPanel', () => {
     function setupSized(node: Partial<Node<NodeData>>, setNodeSize = vi.fn()) {
       const state = {
         nodes: [{ ...makeNode({}), ...node }],
-        edges: [],
         selectedNodeId: 'n1',
         selectedNodeIds: [],
         setSelectedNode: vi.fn(),
@@ -648,7 +617,6 @@ describe('DetailPanel', () => {
         createGroup: vi.fn(),
         ungroup: vi.fn(),
         setNodeSize,
-        setHighlightedPath: vi.fn(),
         serviceStatuses: {},
       }
       vi.mocked(canvasStore.useCanvasStore).mockImplementation(
