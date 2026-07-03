@@ -4,6 +4,7 @@ import { RotateCcw, ChevronDown } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { NODE_TYPE_LABELS, type NodeData, type NodeType, type CheckMethod, type NodeTypeStyle } from '@/types'
@@ -202,13 +203,17 @@ export function NodeModal({ open, onClose, onSubmit, initial, title = 'Add Node'
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="bg-[#161b22] border-[#30363d] text-foreground max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-[#161b22] border-[#30363d] text-foreground max-w-[calc(100%-2rem)] sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            {/* ── LEFT column: identity & network ── */}
+            <div className="flex flex-col gap-4 min-w-0">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 pb-1 border-b border-[#30363d]">Information</div>
+            <div className="grid grid-cols-2 gap-3">
             {/* Type + Icon on the same row */}
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs text-muted-foreground">Type</Label>
@@ -287,6 +292,7 @@ export function NodeModal({ open, onClose, onSubmit, initial, title = 'Add Node'
                 <ChevronDown size={12} className="text-muted-foreground shrink-0" style={{ transform: iconPickerOpen ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s' }} />
               </button>
             </div>
+            </div>{/* end Type/Icon subgrid */}
 
             {/* Inline icon picker - full width, shown below the type+icon row */}
             {iconPickerOpen && (
@@ -384,6 +390,7 @@ export function NodeModal({ open, onClose, onSubmit, initial, title = 'Add Node'
               {labelError && <p className="text-[11px] text-[#f85149]">Label is required</p>}
             </div>
 
+            <div className="grid grid-cols-2 gap-3">
             {/* Hostname */}
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs text-muted-foreground">Hostname</Label>
@@ -406,7 +413,9 @@ export function NodeModal({ open, onClose, onSubmit, initial, title = 'Add Node'
               />
               <span className="text-[10px] text-muted-foreground/50">comma-separated</span>
             </div>
+            </div>{/* end Hostname/IP subgrid */}
 
+            <div className="grid grid-cols-2 gap-3">
             {/* Check method — hidden for zigbee nodes (always none/online) */}
             {!ZIGBEE_TYPES.includes((form.type ?? '') as NodeType) && (
               <div className="flex flex-col gap-1.5">
@@ -436,6 +445,7 @@ export function NodeModal({ open, onClose, onSubmit, initial, title = 'Add Node'
                 />
               </div>
             )}
+            </div>{/* end Check method/target subgrid */}
 
             {/* Parent Container */}
             {(() => {
@@ -502,7 +512,22 @@ export function NodeModal({ open, onClose, onSubmit, initial, title = 'Add Node'
                 </button>
               </div>
             )}
+            {/* Notes */}
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs text-muted-foreground">Notes</Label>
+              <Textarea
+                value={form.notes ?? ''}
+                onChange={(e) => set('notes', e.target.value)}
+                placeholder="Optional notes"
+                rows={3}
+                className={`bg-[#21262d] border-[#30363d] text-sm resize-y min-h-16 ${modalStyles['modal-radius']}`}
+              />
+            </div>
+            </div>{/* ── end LEFT column ── */}
 
+            {/* ── RIGHT column: display ── */}
+            <div className="flex flex-col gap-4 min-w-0">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 pb-1 border-b border-[#30363d]">Design</div>
             {/* Service visibility */}
             {form.type !== 'groupRect' && form.type !== 'group' && (
               <div className="flex items-start justify-between col-span-2 py-1">
@@ -644,16 +669,7 @@ export function NodeModal({ open, onClose, onSubmit, initial, title = 'Add Node'
               </div>
             )}
 
-            {/* Notes */}
-            <div className="flex flex-col gap-1.5 col-span-2">
-              <Label className="text-xs text-muted-foreground">Notes</Label>
-              <Input
-                value={form.notes ?? ''}
-                onChange={(e) => set('notes', e.target.value)}
-                placeholder="Optional notes"
-                className={`bg-[#21262d] border-[#30363d] text-sm h-8 ${modalStyles['modal-radius']}`}
-              />
-            </div>
+            </div>{/* ── end RIGHT column ── */}
           </div>
 
           <div className="flex justify-between gap-2 pt-1">
