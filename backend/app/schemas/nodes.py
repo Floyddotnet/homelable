@@ -32,6 +32,9 @@ class NodeBase(BaseModel):
     width: float | None = None
     height: float | None = None
     bottom_handles: int = 1
+    top_handles: int = 1
+    left_handles: int = 0
+    right_handles: int = 0
 
 
 class NodeCreate(NodeBase):
@@ -66,6 +69,9 @@ class NodeUpdate(BaseModel):
     width: float | None = None
     height: float | None = None
     bottom_handles: int | None = None
+    top_handles: int | None = None
+    left_handles: int | None = None
+    right_handles: int | None = None
 
 
 class NodeResponse(NodeBase):

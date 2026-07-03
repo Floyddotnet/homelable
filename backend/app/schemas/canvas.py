@@ -34,6 +34,9 @@ class NodeSave(BaseModel):
     width: float | None = None
     height: float | None = None
     bottom_handles: int = 1
+    top_handles: int = 1
+    left_handles: int = 0
+    right_handles: int = 0
     pos_x: float = 0
     pos_y: float = 0
 
