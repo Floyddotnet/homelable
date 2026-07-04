@@ -51,6 +51,32 @@ async def test_save_canvas_creates_nodes_and_edges(client: AsyncClient, headers:
     assert canvas["viewport"] == {"x": 1, "y": 2, "zoom": 1.5}
 
 
+async def test_save_canvas_round_trips_per_side_handles(client: AsyncClient, headers: dict):
+    # Regression (#243): top/left/right_handles must persist across save+reload,
+    # not just bottom_handles.
+    n1 = node_payload(label="Cam", type="camera", top_handles=2, bottom_handles=3, left_handles=1, right_handles=4)
+    res = await client.post("/api/v1/canvas/save", json={"nodes": [n1], "edges": [], "viewport": {"x": 0, "y": 0, "zoom": 1}}, headers=headers)
+    assert res.status_code == 200
+
+    node = (await client.get("/api/v1/canvas", headers=headers)).json()["nodes"][0]
+    assert node["top_handles"] == 2
+    assert node["bottom_handles"] == 3
+    assert node["left_handles"] == 1
+    assert node["right_handles"] == 4
+
+
+async def test_save_canvas_defaults_per_side_handles(client: AsyncClient, headers: dict):
+    # Nodes saved without the new fields fall back to top/bottom=1, left/right=0.
+    n1 = node_payload(label="Srv", type="server")
+    await client.post("/api/v1/canvas/save", json={"nodes": [n1], "edges": [], "viewport": {"x": 0, "y": 0, "zoom": 1}}, headers=headers)
+
+    node = (await client.get("/api/v1/canvas", headers=headers)).json()["nodes"][0]
+    assert node["top_handles"] == 1
+    assert node["bottom_handles"] == 1
+    assert node["left_handles"] == 0
+    assert node["right_handles"] == 0
+
+
 async def test_load_canvas_exposes_inventory_timestamps(client: AsyncClient, headers: dict):
     n1 = node_payload(label="Router", type="router")
     await client.post("/api/v1/canvas/save", json={"nodes": [n1], "edges": [], "viewport": {}}, headers=headers)

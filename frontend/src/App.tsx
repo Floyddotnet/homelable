@@ -2,7 +2,7 @@ import { useEffect, useCallback, useRef, useState } from 'react'
 import { ReactFlowProvider, type Connection, type Edge } from '@xyflow/react'
 import { type Node } from '@xyflow/react'
 import { applyDagreLayout } from '@/utils/layout'
-import { serializeNode, serializeEdge, deserializeApiNode, deserializeApiEdge, type ApiNode, type ApiEdge } from '@/utils/canvasSerializer'
+import { serializeNode, serializeEdge, deserializeApiNode, deserializeApiEdge, migrateClusterHandles, type ApiNode, type ApiEdge } from '@/utils/canvasSerializer'
 import { generateUUID } from '@/utils/uuid'
 import { getCenteredPosition } from '@/utils/viewportCenter'
 import { resolveVirtualEdgeParent } from '@/utils/virtualEdgeParent'
@@ -28,6 +28,7 @@ import { ZwaveImportModal } from '@/components/zwave/ZwaveImportModal'
 import { GroupRectModal, type GroupRectFormData } from '@/components/modals/GroupRectModal'
 import { TextModal, type TextFormData } from '@/components/modals/TextModal'
 import { ThemeModal } from '@/components/modals/ThemeModal'
+import { CustomStyleModal } from '@/components/modals/CustomStyleModal'
 import { SearchModal } from '@/components/modals/SearchModal'
 import { PendingDevicesModal } from '@/components/modals/PendingDevicesModal'
 import { ScanHistoryModal } from '@/components/modals/ScanHistoryModal'
@@ -41,7 +42,7 @@ import { canvasApi, designsApi, liveviewApi } from '@/api/client'
 import * as standaloneStorage from '@/utils/standaloneStorage'
 import { demoNodes, demoEdges } from '@/utils/demoData'
 import { useStatusPolling } from '@/hooks/useStatusPolling'
-import type { NodeData, EdgeData, CustomStyleDef, FloorMapConfig } from '@/types'
+import type { NodeData, EdgeData, CustomStyleDef, FloorMapConfig, NodeType } from '@/types'
 import type { ZigbeeNode, ZigbeeEdge } from '@/components/zigbee/types'
 import type { ZwaveNode, ZwaveEdge } from '@/components/zwave/types'
 
@@ -57,6 +58,7 @@ export default function App() {
   useStatusPolling()
 
   const [themeModalOpen, setThemeModalOpen] = useState(false)
+  const [styleEditorType, setStyleEditorType] = useState<NodeType | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [scanHistoryOpen, setScanHistoryOpen] = useState(false)
   const [pendingModalOpen, setPendingModalOpen] = useState(false)
@@ -125,8 +127,10 @@ export default function App() {
             .filter((n) => n.type === 'group' || n.container_mode === true)
             .map((n) => [n.id, true])
         )
-        const rfNodes = (apiNodes as ApiNode[]).map((n) => deserializeApiNode(n, proxmoxContainerMap))
-        const rfEdges = (apiEdges as ApiEdge[]).map(deserializeApiEdge)
+        const { nodes: rfNodes, edges: rfEdges } = migrateClusterHandles(
+          (apiNodes as ApiNode[]).map((n) => deserializeApiNode(n, proxmoxContainerMap)),
+          (apiEdges as ApiEdge[]).map(deserializeApiEdge),
+        )
         const savedTheme = res.data.viewport?.theme_id
         if (savedTheme) setTheme(savedTheme)
         if (res.data.custom_style) setCustomStyle(res.data.custom_style as CustomStyleDef)
@@ -154,7 +158,8 @@ export default function App() {
       if (saved.custom_style) setCustomStyle(saved.custom_style)
       // Floor plans are backend-only; keep the store clear in standalone mode.
       setFloorMap(null)
-      loadCanvas(saved.nodes, saved.edges)
+      const migrated = migrateClusterHandles(saved.nodes, saved.edges)
+      loadCanvas(migrated.nodes, migrated.edges)
     } else {
       setFloorMap(null)
       loadCanvas(demoNodes, demoEdges)
@@ -752,6 +757,7 @@ export default function App() {
           onSubmit={handleAddNode}
           title="Add Node"
           parentCandidates={nodes.map((n) => ({ id: n.id, label: n.data.label ?? n.id, type: n.data.type, container_mode: n.data.container_mode }))}
+          onEditTypeStyle={setStyleEditorType}
         />
 
         {/* key forces re-mount when editing a different node, resetting form state */}
@@ -781,6 +787,7 @@ export default function App() {
               .map((n) => ({ id: n.id, label: n.data.label ?? n.id, type: n.data.type, container_mode: n.data.container_mode }))
           })()}
           currentNodeId={editNodeId ?? undefined}
+          onEditTypeStyle={setStyleEditorType}
         />
 
         <EdgeModal
@@ -788,11 +795,6 @@ export default function App() {
           open={!!pendingConnection}
           onClose={() => setPendingConnection(null)}
           onSubmit={handleEdgeConfirm}
-          initial={
-            pendingConnection?.sourceHandle?.includes('cluster') || pendingConnection?.targetHandle?.includes('cluster')
-              ? { type: 'cluster' }
-              : undefined
-          }
         />
 
         <EdgeModal
@@ -916,6 +918,15 @@ export default function App() {
           key={themeModalOpen ? 'theme-open' : 'theme-closed'}
           open={themeModalOpen}
           onClose={() => setThemeModalOpen(false)}
+        />
+
+        {/* Standalone Custom Style editor, opened from a node's Appearance
+            shortcut with that node's type preselected. */}
+        <CustomStyleModal
+          key={styleEditorType ? `style-${styleEditorType}` : 'style-closed'}
+          open={styleEditorType !== null}
+          initialNodeType={styleEditorType ?? undefined}
+          onClose={() => setStyleEditorType(null)}
         />
 
         <SearchModal
