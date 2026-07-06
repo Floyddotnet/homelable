@@ -59,8 +59,7 @@ The token is a real credential and is treated as one:
   that request only and is **never stored**.
 - For **auto-sync** (which runs with no user present), configure the token on the
   **server** via environment variables (below). It is read from `.env`, kept in
-  memory, **never written to disk by the app**, and **never returned by any API**
-  endpoint. Connection errors are sanitized so the token can't leak in a message.
+  memory.
 
 ```env
 # backend/.env
@@ -151,15 +150,6 @@ On each run, Homelable re-imports the inventory into the pending section:
 - Existing devices are **updated in place** (status, specs, IP).
 - Nothing is ever deleted — a VM removed from Proxmox is left on your canvas.
 
----
-
-## Security notes
-
-- Use a dedicated user + token with the read-only **`PVEAuditor`** role.
-- The token is **never** persisted to disk by Homelable and **never** included in
-  any API response; only a boolean "token configured" flag is exposed.
-- Keep `PROXMOX_VERIFY_TLS=true` in production; disable only for self-signed labs.
-- Error messages are sanitized so credentials cannot leak.
 
 ---
 
@@ -183,6 +173,4 @@ plugins are required.
 
 ---
 
-## Screenshots
 
-_(Screenshots will be added in a future release)_
