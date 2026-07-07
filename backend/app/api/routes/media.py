@@ -42,19 +42,21 @@ _NAME_RE = re.compile(r"[0-9a-f]{32}\.(png|jpg|webp)")
 
 
 def _resolve_media_path(filename: str) -> Path:
-    """Resolve `filename` inside the media dir, rejecting anything that escapes it.
+    """Return the existing media file named `filename`, or raise 404.
 
-    `filename` is validated against `_NAME_RE` (no separators, no `..`) and the
-    resolved path is confirmed to sit directly under the resolved media dir.
-    Raises 404 on any mismatch so we never leak whether a path exists elsewhere.
+    `filename` is validated against `_NAME_RE` (no separators, no `..`), then
+    matched by name against the actual directory listing. The user string is
+    only ever compared with `==` against trusted `iterdir()` entries — it never
+    builds a path — so a crafted value cannot escape the media dir.
     """
     if not _NAME_RE.fullmatch(filename):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    base = settings.media_dir().resolve()
-    path = (base / filename).resolve()
-    if path.parent != base:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    return path
+    base = settings.media_dir()
+    if base.is_dir():
+        for entry in base.iterdir():
+            if entry.name == filename and entry.is_file():
+                return entry
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
 
 @router.post("/upload")
@@ -89,14 +91,10 @@ async def upload_media(file: UploadFile, _user: str = Depends(get_current_user))
 
 @router.get("/{filename}")
 async def get_media(filename: str) -> FileResponse:
-    path = _resolve_media_path(filename)
-    if not path.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    return FileResponse(path)
+    # _resolve_media_path returns only an existing file, else raises 404.
+    return FileResponse(_resolve_media_path(filename))
 
 
 @router.delete("/{filename}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_media(filename: str, _user: str = Depends(get_current_user)) -> None:
-    path = _resolve_media_path(filename)
-    if path.is_file():
-        path.unlink()
+    _resolve_media_path(filename).unlink()
