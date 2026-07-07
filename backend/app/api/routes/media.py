@@ -11,6 +11,7 @@ raw-image uploads reuse the same endpoint.
 
 import re
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
@@ -38,6 +39,22 @@ MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 
 # Only ever serve/delete files we created: 32 hex chars + known extension.
 _NAME_RE = re.compile(r"^[0-9a-f]{32}\.(png|jpg|webp)$")
+
+
+def _resolve_media_path(filename: str) -> Path:
+    """Resolve `filename` inside the media dir, rejecting anything that escapes it.
+
+    `filename` is validated against `_NAME_RE` (no separators, no `..`) and the
+    resolved path is confirmed to sit directly under the resolved media dir.
+    Raises 404 on any mismatch so we never leak whether a path exists elsewhere.
+    """
+    if not _NAME_RE.match(filename):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    base = settings.media_dir().resolve()
+    path = (base / filename).resolve()
+    if path.parent != base:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return path
 
 
 @router.post("/upload")
@@ -72,9 +89,7 @@ async def upload_media(file: UploadFile, _user: str = Depends(get_current_user))
 
 @router.get("/{filename}")
 async def get_media(filename: str) -> FileResponse:
-    if not _NAME_RE.match(filename):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    path = settings.media_dir() / filename
+    path = _resolve_media_path(filename)
     if not path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     return FileResponse(path)
@@ -82,8 +97,6 @@ async def get_media(filename: str) -> FileResponse:
 
 @router.delete("/{filename}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_media(filename: str, _user: str = Depends(get_current_user)) -> None:
-    if not _NAME_RE.match(filename):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    path = settings.media_dir() / filename
+    path = _resolve_media_path(filename)
     if path.is_file():
         path.unlink()

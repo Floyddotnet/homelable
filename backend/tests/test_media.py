@@ -80,6 +80,13 @@ async def test_get_rejects_bad_filename(client, media_dir):
 
 
 @pytest.mark.asyncio
+async def test_delete_rejects_bad_filename(client, auth_headers, media_dir):
+    headers = await auth_headers()
+    res = await client.delete("/api/v1/media/..%2f..%2fetc%2fpasswd", headers=headers)
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_delete_requires_auth_and_removes_file(client, auth_headers, media_dir):
     headers = await auth_headers()
     up = await _upload(client, headers)
