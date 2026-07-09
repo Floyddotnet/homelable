@@ -17,15 +17,17 @@ If you are running  <img width="22" height="22" align="top" alt="New_Home_Assist
 
 <p align="center">
   <img src="docs/homelable1.png" alt="Homelable canvas overview" width="100%" />
-  <img src="docs/homelable2.png" alt="Homelable node detail" width="100%" />
-  <img src="docs/homelable4.png" alt="Homelable edit pannel" width="48%" />
-  <img width="48%" alt="Homelable Zigbee Network" src="https://github.com/user-attachments/assets/06caab68-6637-4dda-ab16-7e83f63d3972" />
+  <img  alt="Homelable Device inventory" src="https://github.com/user-attachments/assets/f3903ac8-354d-4873-81ba-1914971890ed" />
+  <img width="49.5%" alt="Homelable Custom node" src="https://github.com/user-attachments/assets/813725b1-376b-4bad-bb1f-0985f3bc7546" />
+  <img width="49.5%" alt="Homelable Zigbee Network" src="https://github.com/user-attachments/assets/59a4ebb6-4eb9-4c96-b940-43897e04536d" />
 
 </p>
 
 ---
 
 ## Features
+
+From one-click **network scans** and **Proxmox / Zigbee / Z-Wave** imports to **live status monitoring**, floor plans, multi-canvas layouts and an **MCP server** for AI assistants — Homelable maps and watches your whole homelab.
 
 Every feature, with how to turn it on and use it, is described in **[FEATURES.md](./FEATURES.md)**.
 
