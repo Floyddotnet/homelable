@@ -263,6 +263,18 @@ def test_create_design_schema_requires_name():
 
 
 @pytest.mark.anyio
+async def test_delete_design(mock_backend):
+    await _dispatch("delete_design", {"design_id": "d-old"})
+    mock_backend.delete.assert_called_once_with("/api/v1/designs/d-old")
+
+
+def test_delete_design_schema_requires_design_id():
+    tool = next(t for t in TOOLS if t.name == "delete_design")
+    assert tool.inputSchema["required"] == ["design_id"]
+    assert "design_id" in tool.inputSchema["properties"]
+
+
+@pytest.mark.anyio
 async def test_unknown_tool():
     with pytest.raises(ValueError, match="Unknown tool"):
         await _dispatch("nonexistent", {})

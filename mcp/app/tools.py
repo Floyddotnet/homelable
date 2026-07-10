@@ -163,6 +163,13 @@ def _build_tools() -> list[Tool]:
                 "design_type": {"type": "string", "description": "Design type (default: network)."},
             },
         }),
+        Tool(name="delete_design", description="Delete a design (canvas) and all its nodes and edges. The last remaining design cannot be deleted.", inputSchema={
+            "type": "object",
+            "required": ["design_id"],
+            "properties": {
+                "design_id": {"type": "string", "description": "ID of the design to delete. Call list_designs to discover IDs."},
+            },
+        }),
     ]
 
 
@@ -271,5 +278,8 @@ async def _dispatch(name: str, args: dict) -> dict:
 
     if name == "create_design":
         return await backend.post("/api/v1/designs", args)
+
+    if name == "delete_design":
+        return await backend.delete(f"/api/v1/designs/{args['design_id']}")
 
     raise ValueError(f"Unknown tool: {name}")
