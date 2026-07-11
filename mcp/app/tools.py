@@ -134,6 +134,21 @@ def _build_tools() -> list[Tool]:
             "type": "object",
             "properties": {},
         }),
+        Tool(name="list_inventory", description="List the full device inventory (everything scanned except user-hidden devices): both pending devices awaiting triage and already-approved devices. Each row carries a 'status' field. Use the optional 'status' filter to narrow the result.", inputSchema={
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["all", "pending", "approved"], "default": "all", "description": "Filter inventory by status. 'all' returns pending + approved."},
+            },
+        }),
+        Tool(name="list_hidden_devices", description="List devices the user has hidden from the inventory. Hidden devices are excluded from list_pending_devices and list_inventory; use restore_device to bring one back to pending.", inputSchema={
+            "type": "object",
+            "properties": {},
+        }),
+        Tool(name="restore_device", description="Restore (un-hide) a previously hidden device, returning it to pending status so it reappears in the triage list. Use this to undo a hide_device action.", inputSchema={
+            "type": "object",
+            "required": ["id"],
+            "properties": {"id": {"type": "string"}},
+        }),
         Tool(name="list_designs", description="List all designs (canvases) with their IDs and node/group/text counts", inputSchema={
             "type": "object",
             "properties": {},
@@ -228,7 +243,27 @@ async def _dispatch(name: str, args: dict) -> dict:
         return await backend.get("/api/v1/nodes")
 
     if name == "list_pending_devices":
-        return await backend.get("/api/v1/scan/pending")
+        # Backend /scan/pending returns the whole inventory: approved rows stay
+        # listed so the frontend can show a canvas-presence badge. This tool
+        # promises only devices "not yet approved or hidden", so filter to
+        # actual pending rows (legacy rows without a status count as pending).
+        devices = await backend.get("/api/v1/scan/pending")
+        return [d for d in devices if d.get("status", "pending") == "pending"]
+
+    if name == "list_inventory":
+        # /scan/pending returns the whole inventory minus hidden rows (pending +
+        # approved). Legacy rows without a status field count as pending.
+        devices = await backend.get("/api/v1/scan/pending")
+        wanted = args.get("status", "all")
+        if wanted == "all":
+            return devices
+        return [d for d in devices if d.get("status", "pending") == wanted]
+
+    if name == "list_hidden_devices":
+        return await backend.get("/api/v1/scan/hidden")
+
+    if name == "restore_device":
+        return await backend.post(f"/api/v1/scan/pending/{args['id']}/restore", {})
 
     if name == "list_designs":
         return await backend.get("/api/v1/designs")
