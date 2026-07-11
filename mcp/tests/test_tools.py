@@ -282,3 +282,46 @@ async def test_list_pending_devices_filters_non_pending(mock_backend):
     ])
     result = await _dispatch("list_pending_devices", {})
     assert [d["id"] for d in result] == ["p1", "legacy"]
+
+
+_INVENTORY = [
+    {"id": "p1", "ip": "192.168.1.50", "status": "pending"},
+    {"id": "a1", "ip": "192.168.1.60", "status": "approved"},
+    {"id": "legacy", "ip": "192.168.1.80"},
+]
+
+
+@pytest.mark.anyio
+async def test_list_inventory_default_returns_all(mock_backend):
+    """No status filter returns the whole non-hidden inventory verbatim."""
+    mock_backend.get = AsyncMock(return_value=list(_INVENTORY))
+    result = await _dispatch("list_inventory", {})
+    mock_backend.get.assert_called_once_with("/api/v1/scan/pending")
+    assert [d["id"] for d in result] == ["p1", "a1", "legacy"]
+
+
+@pytest.mark.anyio
+async def test_list_inventory_filters_approved(mock_backend):
+    mock_backend.get = AsyncMock(return_value=list(_INVENTORY))
+    result = await _dispatch("list_inventory", {"status": "approved"})
+    assert [d["id"] for d in result] == ["a1"]
+
+
+@pytest.mark.anyio
+async def test_list_inventory_pending_keeps_legacy(mock_backend):
+    """Legacy rows without a status field count as pending."""
+    mock_backend.get = AsyncMock(return_value=list(_INVENTORY))
+    result = await _dispatch("list_inventory", {"status": "pending"})
+    assert [d["id"] for d in result] == ["p1", "legacy"]
+
+
+@pytest.mark.anyio
+async def test_list_hidden_devices(mock_backend):
+    await _dispatch("list_hidden_devices", {})
+    mock_backend.get.assert_called_once_with("/api/v1/scan/hidden")
+
+
+@pytest.mark.anyio
+async def test_restore_device(mock_backend):
+    await _dispatch("restore_device", {"id": "5"})
+    mock_backend.post.assert_called_once_with("/api/v1/scan/pending/5/restore", {})
