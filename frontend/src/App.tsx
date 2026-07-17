@@ -38,6 +38,7 @@ import { ShortcutsModal } from '@/components/modals/ShortcutsModal'
 import { ConfirmAddToGroupModal } from '@/components/modals/ConfirmAddToGroupModal'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { readAutosaveSettings, subscribeAutosaveSettings, type AutosaveSettings } from '@/utils/autosaveSettings'
+import { useAutosave } from '@/hooks/useAutosave'
 import { useDesignStore } from '@/stores/designStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useThemeStore } from '@/stores/themeStore'
@@ -126,13 +127,17 @@ export default function App() {
   const handleSaveRef = useRef(handleSave)
   useEffect(() => { handleSaveRef.current = handleSave }, [handleSave])
 
-  // Autosave: debounce — resets on every node/edge change, fires after `delay` seconds
-  // of inactivity if there are unsaved changes and autosave is enabled.
-  useEffect(() => {
-    if (!autosave.enabled || !hasUnsavedChanges) return
-    const t = setTimeout(() => { void handleSaveRef.current(undefined, { silent: true }) }, autosave.delay * 1000)
-    return () => clearTimeout(t)
-  }, [nodes, edges, autosave.enabled, autosave.delay, hasUnsavedChanges])
+  // Debounced, opt-in autosave. Pins the active design when armed and re-checks
+  // it at fire time so a mid-switch save can't clobber the wrong design.
+  useAutosave({
+    enabled: autosave.enabled,
+    delaySeconds: autosave.delay,
+    hasUnsavedChanges,
+    activeDesignId,
+    changeSignals: [nodes, edges],
+    getActiveDesignId: () => useDesignStore.getState().activeDesignId,
+    onSave: (designId) => { void handleSaveRef.current(designId, { silent: true }) },
+  })
 
   const loadCanvasFromApi = useCallback(async (designId?: string) => {
     try {
